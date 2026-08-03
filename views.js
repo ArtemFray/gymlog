@@ -34,7 +34,7 @@ function renderNav() {
     `<button data-act="tab" data-v="${tb.id}" class="${route === tb.id ? 'on' : ''}">
        <span class="ic">${tb.ic}</span><span>${esc(t(tb.k))}</span></button>`).join('');
 }
-function go(r) { route = r; renderNav(); render(); window.scrollTo(0, 0); }
+function go(r) { route = r; renderNav(); render(); const m = $('#app'); if (m) m.scrollTop = 0; }
 
 /* ============ render ============ */
 function render() {
@@ -66,15 +66,18 @@ function viewHome() {
       <button class="btn" data-act="resume">${esc(t('resume'))}</button></div>`;
   } else {
     html += `<button class="btn" data-act="start-empty">${esc(t('start_empty'))}</button><div style="height:12px"></div>`;
-    html += `<h2>${esc(t('start_from'))}</h2>`;
+    html += `<div class="row between" style="margin:20px 0 10px">
+      <h2 style="margin:0">${esc(t('start_from'))}</h2>
+      <button class="chip" data-act="new-tpl">+ ${esc(t('new'))}</button></div>`;
     if (!S.templates.length) html += `<div class="empty">${esc(t('no_templates'))}</div>`;
     else html += `<div class="list">` + S.templates.map((tp) => {
       const names = (tp.items || []).map((i) => label(exById(i.exId))).slice(0, 4).join(' · ');
-      return `<div class="item" data-act="start-tpl" data-v="${tp.id}">
-        <div class="grow"><div style="font-weight:650">${esc(label(tp) || tp.name)}</div>
+      return `<div class="item">
+        <div class="grow" data-act="start-tpl" data-v="${tp.id}"><div style="font-weight:650">${esc(label(tp) || tp.name)}</div>
         <div class="small dim" style="margin-top:2px">${esc(names)}${(tp.items || []).length > 4 ? ' …' : ''}</div></div>
         ${tp.seeded ? `<span class="badge acc">${esc(t('program_note'))}</span>` : ''}
-        <span class="dim">›</span></div>`;
+        <button class="badge" data-act="edit-tpl" data-v="${tp.id}" style="padding:7px 9px">✎</button>
+        <span class="dim" data-act="start-tpl" data-v="${tp.id}">›</span></div>`;
     }).join('') + `</div>`;
   }
 
@@ -116,6 +119,8 @@ function viewLog() {
   w.entries.forEach((e, ei) => { html += entryCard(e, ei, w); });
 
   html += `<button class="btn sec" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>
+    <div style="height:8px"></div>
+    <button class="btn ghost sm" data-act="tpl-from-active" style="width:100%">${esc(t('save_as_template'))}</button>
     <div style="height:10px"></div>
     <label class="f"><span>${esc(t('notes'))}</span><textarea data-f="wnotes" placeholder="${esc(t('note_ph'))}">${esc(w.notes)}</textarea></label>
     <div class="row" style="gap:10px;margin-top:6px">
@@ -420,6 +425,103 @@ function lineChart(series, opt = {}) {
   </svg>`;
 }
 
+/* ============ MUSCLE MAP ============ */
+/* Stylised front/back body diagram. Every shape carries the muscle group it represents;
+   primary = solid accent, secondary = translucent accent, everything else = neutral. */
+function muscleMap(exId) {
+  const ex = exById(exId);
+  const info = EX_INFO[exId] || {};
+  const primary = ex.m;
+  const secondary = new Set((info.sec || []).concat(ex.sec || []));
+
+  const fill = (m) => {
+    if (m === primary) return 'fill="var(--acc)"';
+    if (secondary.has(m)) return 'fill="var(--acc)" fill-opacity="0.4"';
+    return 'fill="var(--bg3)" stroke="var(--line)" stroke-width="0.7"';
+  };
+  const N = 'fill="var(--bg3)" stroke="var(--line)" stroke-width="0.7"';
+  /* faint silhouette so the muscle blocks read as one body */
+  const SIL = `<g fill="var(--line)" opacity="0.5">
+    <rect x="40" y="32" width="40" height="82" rx="15"/>
+    <rect x="19" y="40" width="17" height="76" rx="8"/>
+    <rect x="84" y="40" width="17" height="76" rx="8"/>
+    <rect x="43" y="94" width="17" height="108" rx="8"/>
+    <rect x="60" y="94" width="17" height="108" rx="8"/></g>`;
+
+  const front = SIL + `
+    <circle cx="60" cy="17" r="11" ${N}/>
+    <rect x="54" y="26" width="12" height="8" rx="3" ${N}/>
+    <ellipse cx="35" cy="45" rx="11" ry="9" ${fill('shoulders')}/>
+    <ellipse cx="85" cy="45" rx="11" ry="9" ${fill('shoulders')}/>
+    <rect x="43" y="37" width="16" height="21" rx="6" ${fill('chest')}/>
+    <rect x="61" y="37" width="16" height="21" rx="6" ${fill('chest')}/>
+    <rect x="48" y="60" width="24" height="36" rx="7" ${fill('core')}/>
+    <ellipse cx="28" cy="66" rx="8" ry="13" ${fill('biceps')}/>
+    <ellipse cx="92" cy="66" rx="8" ry="13" ${fill('biceps')}/>
+    <ellipse cx="23" cy="93" rx="7" ry="15" ${fill('forearms')}/>
+    <ellipse cx="97" cy="93" rx="7" ry="15" ${fill('forearms')}/>
+    <circle cx="21" cy="112" r="5" ${N}/>
+    <circle cx="99" cy="112" r="5" ${N}/>
+    <rect x="45" y="98" width="30" height="12" rx="6" ${N}/>
+    <rect x="45" y="112" width="13" height="46" rx="7" ${fill('quads')}/>
+    <rect x="62" y="112" width="13" height="46" rx="7" ${fill('quads')}/>
+    <rect x="46" y="161" width="11" height="34" rx="5" ${N}/>
+    <rect x="63" y="161" width="11" height="34" rx="5" ${N}/>
+    <rect x="44" y="197" width="14" height="7" rx="3" ${N}/>
+    <rect x="62" y="197" width="14" height="7" rx="3" ${N}/>`;
+
+  const back = SIL + `
+    <circle cx="60" cy="17" r="11" ${N}/>
+    <rect x="54" y="26" width="12" height="8" rx="3" ${N}/>
+    <ellipse cx="35" cy="45" rx="11" ry="9" ${fill('shoulders')}/>
+    <ellipse cx="85" cy="45" rx="11" ry="9" ${fill('shoulders')}/>
+    <rect x="48" y="33" width="24" height="15" rx="6" ${fill('back')}/>
+    <rect x="41" y="49" width="17" height="24" rx="7" ${fill('back')}/>
+    <rect x="62" y="49" width="17" height="24" rx="7" ${fill('back')}/>
+    <rect x="50" y="74" width="20" height="18" rx="6" ${fill('back')}/>
+    <ellipse cx="28" cy="66" rx="8" ry="13" ${fill('triceps')}/>
+    <ellipse cx="92" cy="66" rx="8" ry="13" ${fill('triceps')}/>
+    <ellipse cx="23" cy="93" rx="7" ry="15" ${fill('forearms')}/>
+    <ellipse cx="97" cy="93" rx="7" ry="15" ${fill('forearms')}/>
+    <circle cx="21" cy="112" r="5" ${N}/>
+    <circle cx="99" cy="112" r="5" ${N}/>
+    <rect x="44" y="94" width="32" height="20" rx="9" ${fill('glutes')}/>
+    <rect x="45" y="116" width="13" height="42" rx="7" ${fill('hamstrings')}/>
+    <rect x="62" y="116" width="13" height="42" rx="7" ${fill('hamstrings')}/>
+    <rect x="46" y="161" width="11" height="32" rx="6" ${fill('calves')}/>
+    <rect x="63" y="161" width="11" height="32" rx="6" ${fill('calves')}/>
+    <rect x="44" y="196" width="14" height="7" rx="3" ${N}/>
+    <rect x="62" y="196" width="14" height="7" rx="3" ${N}/>`;
+
+  const names = [label(MUSCLES.find((m) => m.id === primary) || {})]
+    .concat([...secondary].map((s) => label(MUSCLES.find((m) => m.id === s) || {})).filter(Boolean));
+
+  return `<div class="card">
+    <svg class="chart" viewBox="0 0 250 222" style="height:190px" aria-hidden="true">
+      <g transform="translate(0,6)">${front}</g>
+      <g transform="translate(130,6)">${back}</g>
+      <text x="60" y="220" font-size="9" fill="var(--fg3)" text-anchor="middle">${esc(t('front'))}</text>
+      <text x="190" y="220" font-size="9" fill="var(--fg3)" text-anchor="middle">${esc(t('back_view'))}</text>
+    </svg>
+    <div class="legend"><span><i style="background:var(--acc)"></i>${esc(t('primary'))}: ${esc(names[0] || '—')}</span>
+    ${names.length > 1 ? `<span><i style="background:var(--acc);opacity:.4"></i>${esc(t('secondary'))}: ${esc(names.slice(1).join(', '))}</span>` : ''}</div>
+  </div>`;
+}
+
+/* built-in how-to text for seeded exercises, in the current language */
+function exHowTo(exId) {
+  const info = EX_INFO[exId];
+  if (!info) return '';
+  return (S.settings.lang === 'ru' ? info.ru : info.en) || info.en || '';
+}
+
+function videoLink(exId) {
+  const ex = exById(exId);
+  const q = encodeURIComponent('how to ' + (ex.en || ex.name) + ' proper form');
+  return `<a class="btn sec" style="display:block;text-decoration:none" target="_blank" rel="noopener"
+    href="https://www.youtube.com/results?search_query=${q}">▶ ${esc(t('how_to'))}</a>`;
+}
+
 /* ============ SHEETS ============ */
 function sheet(title, body, opts = {}) {
   const el = document.createElement('div');
@@ -515,8 +617,12 @@ function openExercise(id) {
   const pr = exercisePR(id);
   const h = exerciseHistory(id);
   let body = `<div class="small muted" style="margin-bottom:8px">${esc(label(MUSCLES.find((m) => m.id === ex.m) || {}))} · ${esc(label(EQUIPMENT.find((q) => q.id === ex.eq) || {}))} · ${esc(t(ex.kind === 'time' ? 'type_time' : ex.kind === 'reps' ? 'type_reps' : 'type_wr'))}</div>`;
+  const how = exHowTo(id);
+  if (how) body += `<div class="card tight small" style="line-height:1.5">${esc(how)}</div>`;
   if (ex.desc) body += `<div class="card tight small">${esc(ex.desc)}</div>`;
   if (S.settings.programWarnings && ex.warn) body += `<div class="note">${esc(t(ex.warn === 'back' ? 'warn_back' : 'warn_shoulder'))}</div>`;
+  body += muscleMap(id);
+  body += videoLink(id) + `<div style="height:12px"></div>`;
   if (pr) {
     body += `<div class="kpis" style="margin:10px 0">
       <div class="kpi"><div class="v">${ex.kind === 'time' ? fmtClock(pr.time) : fmtNum(pr.weight, 1) + ' ' + t('kg')}</div><div class="k">${esc(t('best_set'))}</div></div>
@@ -553,6 +659,43 @@ function openWorkout(id) {
     <button class="btn ghost sm" data-act="edit-workout" data-v="${id}" style="flex:1">${esc(t('edit'))}</button>
     <button class="btn danger sm" data-act="delete-workout" data-v="${id}" style="flex:1">${esc(t('delete'))}</button></div>`;
   sheet(w.name || fmtDay(w.startedAt, S.settings.lang), body);
+}
+
+/* --- template editor --- */
+let tplDraft = null;
+
+function openTemplateEditor(id) {
+  const existing = id ? S.templates.find((x) => x.id === id) : null;
+  tplDraft = existing ? clone(existing) : blankTemplate();
+  const el = sheet(existing ? t('edit_template') : t('new_template'), `<div id="tpl-body"></div>`);
+  redrawTpl();
+  return el;
+}
+
+function redrawTpl() {
+  const box = document.getElementById('tpl-body');
+  if (!box || !tplDraft) return;
+  const items = tplDraft.items || [];
+  box.innerHTML = `
+    <label class="f"><span>${esc(t('template_name'))}</span>
+      <input type="text" data-f="tplname" value="${esc(tplDraft.name || '')}" placeholder="Day C"></label>
+    <div class="sethead" style="grid-template-columns:1fr 48px 42px 42px 24px">
+      <div style="text-align:left">${esc(t('add_exercise'))}</div><div>${esc(t('sets_target'))}</div>
+      <div colspan="2">${esc(t('rep_range'))}</div><div></div><div></div></div>
+    ${items.length ? items.map((it, i) => `
+      <div class="setrow" style="grid-template-columns:1fr 48px 42px 42px 24px;align-items:center">
+        <button data-act="tpl-move" data-v="${i}" style="text-align:left;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label(exById(it.exId)))}</button>
+        <input type="text" inputmode="numeric" data-tf="sets" data-i="${i}" value="${it.sets != null ? esc(it.sets) : ''}" placeholder="3">
+        <input type="text" inputmode="numeric" data-tf="lo" data-i="${i}" value="${it.lo != null ? esc(it.lo) : ''}" placeholder="8">
+        <input type="text" inputmode="numeric" data-tf="hi" data-i="${i}" value="${it.hi != null ? esc(it.hi) : ''}" placeholder="12">
+        <button class="del" data-act="tpl-del-item" data-v="${i}">×</button>
+      </div>`).join('') : `<div class="empty">${esc(t('tpl_empty'))}</div>`}
+    <button class="btn ghost sm" data-act="tpl-add-ex" style="width:100%;margin-top:8px">+ ${esc(t('add_exercise'))}</button>
+    <div class="small dim" style="margin-top:8px">${esc(t('sets_target'))} / ${esc(t('rep_range'))} → ${esc(t('progression'))}</div>
+    <div class="row" style="gap:10px;margin-top:14px">
+      <button class="btn" data-act="tpl-save" style="flex:2">${esc(t('save'))}</button>
+      ${S.templates.some((x) => x.id === tplDraft.id) ? `<button class="btn danger" data-act="tpl-delete" style="flex:1">${esc(t('delete'))}</button>` : ''}
+    </div>`;
 }
 
 /* --- plate calculator --- */
@@ -606,9 +749,11 @@ function openSettings() {
         <input type="text" inputmode="decimal" data-f="startw" value="${num(S.settings.startWeight)}" style="width:62px;text-align:center">
         <input type="text" inputmode="decimal" data-f="goalw" value="${num(S.settings.goalWeight)}" style="width:62px;text-align:center"></div>
     </div>
-    <h2>${esc(t('templates'))}</h2>
-    <div class="list">${S.templates.map((tp) => `<div class="item"><div class="grow">${esc(label(tp) || tp.name)}
+    <div class="row between" style="margin:20px 0 10px"><h2 style="margin:0">${esc(t('templates'))}</h2>
+      <button class="chip" data-act="new-tpl">+ ${esc(t('new'))}</button></div>
+    <div class="list">${S.templates.map((tp) => `<div class="item"><div class="grow" data-act="edit-tpl" data-v="${tp.id}">${esc(label(tp) || tp.name)}
       <div class="small dim">${(tp.items || []).length} ${esc(t('exercises_n'))}</div></div>
+      <button class="badge" data-act="edit-tpl" data-v="${tp.id}" style="padding:7px 9px">✎</button>
       <button class="del dim" data-act="del-tpl" data-v="${tp.id}" style="font-size:18px">×</button></div>`).join('') || `<div class="item dim">${esc(t('no_templates'))}</div>`}</div>
     <h2>${esc(t('data'))}</h2>
     <div class="small dim" style="margin-bottom:8px">${esc(t('last_backup'))}: ${dsb === null ? esc(t('never')) : (dsb === 0 ? esc(t('today')) : dsb + esc(t('days_ago')))}</div>
@@ -658,17 +803,15 @@ function beep() {
 }
 function renderRestBar() {
   const old = document.getElementById('restbar');
-  document.body.classList.toggle('resting', !!rest.endsAt);
   if (!rest.endsAt) { if (old) old.remove(); return; }
   const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
-  let el = old;
-  if (!el) {
-    el = document.createElement('div'); el.id = 'restbar';
+  if (!old) {
+    const el = document.createElement('div'); el.id = 'restbar';
     el.innerHTML = `<span>${esc(t('rest'))}</span><span class="t">${fmtClock(left)}</span>
       <span style="flex:1"></span>
       <button data-act="rest-add">${esc(t('add30'))}</button>
       <button data-act="rest-skip">${esc(t('skip'))}</button>`;
-    document.body.appendChild(el);
+    $('#shell').insertBefore(el, $('#nav'));
   }
 }
 
@@ -682,11 +825,18 @@ function onInput(ev) {
     entry.sets[s][fld] = el.value;
     save(); return;
   }
+  const tf = el.dataset.tf;
+  if (tf && tplDraft) {
+    const it = tplDraft.items[+el.dataset.i];
+    if (it) { it[tf] = el.value === '' ? null : Math.max(0, Math.round(num(el.value))); }
+    return;
+  }
   if (!f) return;
   switch (f) {
+    case 'tplname': if (tplDraft) { tplDraft.name = el.value; tplDraft.name_ru = el.value; } break;
     case 'wname': if (S.active) { S.active.name = el.value; save(); } break;
     case 'wnotes': if (S.active) { S.active.notes = el.value; save(); } break;
-    case 'exsearch': ui.exSearch = el.value; { const sc = window.scrollY; render(); window.scrollTo(0, sc); const inp = document.querySelector('[data-f=exsearch]'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } } break;
+    case 'exsearch': ui.exSearch = el.value; { const m = $('#app'); const sc = m ? m.scrollTop : 0; render(); if (m) m.scrollTop = sc; const inp = document.querySelector('[data-f=exsearch]'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } } break;
     case 'statsex': ui.statsEx = el.value; render(); break;
     case 'restsec': S.settings.restDefault = num(el.value) || 120; save(); break;
     case 'barw': S.settings.barWeight = num(el.value) || 20; save(); break;
@@ -801,6 +951,33 @@ function onClick(ev) {
     case 'lang': S.settings.lang = v; save(); closeSheet(); render(); openSettings(); break;
     case 'theme': S.settings.theme = v; document.documentElement.dataset.theme = v; save(); closeSheet(); openSettings(); break;
     case 'del-tpl': if (confirm(t('confirm_delete'))) { deleteTemplate(v); closeSheet(); openSettings(); render(); } break;
+
+    /* template editor */
+    case 'new-tpl': openTemplateEditor(null); break;
+    case 'edit-tpl': openTemplateEditor(v); break;
+    case 'tpl-add-ex': openPicker((exId) => {
+      tplDraft.items.push({ exId, sets: 3, lo: 8, hi: 12, note: '' });
+      redrawTpl();
+    }); break;
+    case 'tpl-del-item': tplDraft.items.splice(+v, 1); redrawTpl(); break;
+    case 'tpl-move': {
+      const i = +v;
+      if (i > 0) { const a = tplDraft.items;[a[i - 1], a[i]] = [a[i], a[i - 1]]; redrawTpl(); }
+      break;
+    }
+    case 'tpl-save': {
+      if (!tplDraft.name.trim()) { alert(t('tpl_name_required')); break; }
+      if (!tplDraft.items.length) { alert(t('tpl_empty')); break; }
+      tplDraft.items.forEach((it) => { if (!it.sets) it.sets = 3; });
+      upsertTemplate(tplDraft); tplDraft = null; closeAllSheets(); go('home'); break;
+    }
+    case 'tpl-delete': if (confirm(t('confirm_delete'))) { deleteTemplate(tplDraft.id); tplDraft = null; closeAllSheets(); render(); } break;
+    case 'tpl-from-active': {
+      if (!S.active || !S.active.entries.length) { alert(t('tpl_empty')); break; }
+      const name = prompt(t('template_name'), S.active.name || '');
+      if (name) { saveTemplateFromWorkout(S.active, name); alert(t('save') + ' ✓'); }
+      break;
+    }
     case 'export': doExport(); break;
     case 'import': doImport(); break;
     case 'wipe': if (confirm(t('wipe_confirm')) && confirm(t('wipe_confirm'))) { localStorage.removeItem(KEY); location.reload(); } break;
@@ -816,6 +993,7 @@ function openEntryMenu(ei) {
   const ex = exById(e.exId);
   const el = sheet(label(ex), `
     <label class="f"><span>${esc(t('notes'))}</span><input type="text" id="em-note" value="${esc(e.note || '')}" placeholder="${esc(t('note_ph'))}"></label>
+    <button class="btn sec" id="em-info" style="margin-bottom:10px">ℹ ${esc(t('info'))}</button>
     <div class="row" style="gap:8px">
       <button class="btn sec sm" id="em-up" style="flex:1">↑</button>
       <button class="btn sec sm" id="em-down" style="flex:1">↓</button>
@@ -828,6 +1006,7 @@ function openEntryMenu(ei) {
     const arr = S.active.entries;[arr[ei], arr[j]] = [arr[j], arr[ei]];
     save(); closeSheet(); render();
   };
+  el.querySelector('#em-info').addEventListener('click', () => { closeSheet(); openExercise(e.exId); });
   el.querySelector('#em-up').addEventListener('click', () => move(-1));
   el.querySelector('#em-down').addEventListener('click', () => move(1));
   el.querySelector('#em-del').addEventListener('click', () => {

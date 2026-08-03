@@ -402,6 +402,15 @@ function saveTemplateFromWorkout(w, name) {
   S.templates.push(tpl); save();
   return tpl;
 }
+function upsertTemplate(draft) {
+  const i = S.templates.findIndex((x) => x.id === draft.id);
+  if (i >= 0) S.templates[i] = draft; else S.templates.push(draft);
+  save();
+  return draft;
+}
+function blankTemplate() {
+  return { id: uid(), name: '', name_ru: '', seeded: false, items: [] };
+}
 function deleteTemplate(id) {
   const i = S.templates.findIndex((x) => x.id === id);
   if (i >= 0) { S.templates.splice(i, 1); save(); }
