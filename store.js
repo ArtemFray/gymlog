@@ -41,7 +41,7 @@ function startOfWeek(d) {
 function weekKey(d) { return ymd(startOfWeek(d)); }
 
 function fmtNum(n, dp = 1) {
-  if (n === null || n === undefined || !isFinite(n)) return '—';
+  if (n === null || n === undefined || !isFinite(n)) return '–';
   const r = Math.round(n * Math.pow(10, dp)) / Math.pow(10, dp);
   return String(r).replace(/\.0+$/, '');
 }
@@ -144,6 +144,10 @@ function deleteExercise(id) {
   else { S.hiddenExercises = S.hiddenExercises || []; if (!S.hiddenExercises.includes(id)) S.hiddenExercises.push(id); }
   invalidateEx(); save();
 }
+function restoreExercise(id) {
+  S.hiddenExercises = (S.hiddenExercises || []).filter((x) => x !== id);
+  invalidateEx(); save();
+}
 
 /* ---------- workout ---------- */
 function newWorkout(name, templateId) {
@@ -208,8 +212,11 @@ function lastPerformance(exId, excludeId) {
 /* ---------- math ---------- */
 const est1RM = (w, r) => (w > 0 && r > 0) ? w * (1 + r / 30) : 0;
 
+/* warm-up sets (set.warm) are excluded from tonnage, e1RM and the progression check */
+const workingSets = (sets) => sets.filter((st) => !st.warm);
+
 function setVolume(st, kind) {
-  if (kind === 'time') return 0;
+  if (kind === 'time' || st.warm) return 0;
   const w = num(st.w), r = num(st.r);
   if (kind === 'reps') return (w > 0 ? w : 0) * r;
   return w * r;
@@ -217,7 +224,7 @@ function setVolume(st, kind) {
 function workoutVolume(w) {
   return w.entries.reduce((sum, e) => {
     const kind = exById(e.exId).kind;
-    return sum + e.sets.reduce((s2, st) => s2 + setVolume(st, kind), 0);
+    return sum + workingSets(e.sets).reduce((s2, st) => s2 + setVolume(st, kind), 0);
   }, 0);
 }
 function workoutSets(w) { return w.entries.reduce((n, e) => n + e.sets.length, 0); }
@@ -241,11 +248,12 @@ function bestSet(entry, kind) {
   return best;
 }
 
-/* progression: all working sets reached the top of the target rep range */
+/* progression: every working set is logged and reached the top of the target rep range */
 function hitTopOfRange(entry) {
   if (!entry.target || !entry.target.hi || !entry.sets.length) return false;
-  if (entry.sets.length < (entry.target.sets || 1)) return false;
-  return entry.sets.every((st) => num(st.r) >= entry.target.hi);
+  const ws = workingSets(entry.sets);
+  if (!ws.length || ws.length < (entry.target.sets || 1)) return false;
+  return ws.every((st) => st.done && num(st.r) >= entry.target.hi);
 }
 
 function overallStats() {
@@ -290,8 +298,9 @@ function muscleSplit(days) {
     if (daysBetween(w.startedAt, now) > days) return;
     w.entries.forEach((e) => {
       const ex = exById(e.exId);
-      const v = e.sets.reduce((s, st) => s + setVolume(st, ex.kind), 0);
-      const sets = e.sets.length;
+      const ws = workingSets(e.sets);
+      const v = ws.reduce((s, st) => s + setVolume(st, ex.kind), 0);
+      const sets = ws.length;
       if (!acc[ex.m]) acc[ex.m] = { volume: 0, sets: 0 };
       acc[ex.m].volume += v; acc[ex.m].sets += sets;
     });
@@ -305,13 +314,14 @@ function exerciseHistory(exId) {
     w.entries.forEach((e) => {
       if (e.exId !== exId || !e.sets.length) return;
       const ex = exById(exId);
-      const b = bestSet(e, ex.kind);
+      const ws = workingSets(e.sets);
+      const b = bestSet({ sets: ws }, ex.kind);
       out.push({
-        date: w.startedAt, workoutId: w.id, sets: e.sets,
-        volume: e.sets.reduce((s, st) => s + setVolume(st, ex.kind), 0),
+        date: w.startedAt, workoutId: w.id, sets: e.sets, working: ws,
+        volume: ws.reduce((s, st) => s + setVolume(st, ex.kind), 0),
         best: b,
         e1rm: b ? est1RM(num(b.w), num(b.r)) : 0,
-        topWeight: Math.max(0, ...e.sets.map((st) => num(st.w))),
+        topWeight: Math.max(0, ...ws.map((st) => num(st.w))),
       });
     });
   });
@@ -325,7 +335,7 @@ function exercisePR(exId) {
   h.forEach((x) => {
     bestE = Math.max(bestE, x.e1rm);
     bestVol = Math.max(bestVol, x.volume);
-    x.sets.forEach((st) => {
+    x.working.forEach((st) => {
       bestW = Math.max(bestW, num(st.w));
       bestReps = Math.max(bestReps, num(st.r));
       bestTime = Math.max(bestTime, num(st.s));
