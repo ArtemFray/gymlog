@@ -156,7 +156,7 @@ main {
 nav {
   flex: none; z-index: 30;
   background: var(--bg); border-top: 1px solid var(--line);
-  display: flex; padding: 6px 6px calc(8px + env(safe-area-inset-bottom));
+  display: flex; padding: 4px 6px max(8px, env(safe-area-inset-bottom));
 }
 nav button {
   flex: 1; min-width: 0; min-height: var(--tap);
@@ -173,6 +173,14 @@ nav button svg {
 }
 nav button.on { color: var(--ink); }
 nav button.on svg { fill: currentColor; stroke: currentColor; }
+
+/* iOS home-screen apps with a translucent status bar size 100% and 100dvh short by
+   the top safe area, which leaves a blank band under the nav. 100lvh is the full screen. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body { bottom: auto; height: 100lvh; }
+  #shell { height: 100lvh; }
+  .sheet { bottom: auto; height: 100lvh; }
+}
 
 /* session bar: flex:none row under the header while a workout runs */
 .sessionbar {

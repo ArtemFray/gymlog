@@ -17,7 +17,6 @@ let gest = null;
 let suppressClickUntil = 0;
 
 const NA = '–';
-const MICRO_STEP = 1.25;
 const SWIPE_MIN = 64;
 const LONG_MS = 500;
 
@@ -443,27 +442,20 @@ function lastStr(prev, si, kind) {
   return setStr(p, kind);
 }
 
+/* one step for every weight, tap or hold: settings.wStep (0.5 or 1), default 1 kg */
 function stepFor(ex, fld) {
   if (fld === 'r') return 1;
   if (fld === 's') return 5;
   if (num(ex.inc) > 0) return num(ex.inc);
-  switch (ex.eq) {
-    case 'barbell': return 2.5;
-    case 'dumbbell': return num(S.settings.dbStep) || 2.5;
-    case 'machine':
-    case 'cable': return 5;
-    case 'bodyweight': return 1.25;
-    default: return 2.5;
-  }
+  return num(S.settings.wStep) || 1;
 }
 
 function hintText(ex, kind) {
-  const typeHint = t('hint_type');
-  if (kind === 'time') return [t('hint_steps', { n: 5 }), t('hint_hold_repeat'), typeHint].join(' · ');
-  if (kind === 'reps') return [t('hint_hold_repeat'), typeHint].join(' · ');
-  const step = stepFor(ex, 'w');
-  const holdHint = step === MICRO_STEP ? t('hint_hold_repeat') : t('hint_hold', { n: MICRO_STEP });
-  return [t('hint_steps', { n: fmtNum(step, 2) }), holdHint, typeHint].join(' · ');
+  const parts = [];
+  if (kind === 'time') parts.push(t('hint_steps', { n: 5 }));
+  else if (kind === 'wr') parts.push(t('hint_steps', { n: fmtNum(stepFor(ex, 'w'), 2) }));
+  parts.push(t('hint_hold_repeat'), t('hint_type'));
+  return parts.join(' · ');
 }
 
 function stepper(ei, si, fld, value, mode, unit) {
@@ -982,7 +974,7 @@ function openPlates(preset) {
 function settingsBody() {
   const dsb = daysSinceBackup();
   const lang = S.settings.lang, theme = S.settings.theme;
-  const dbStep = num(S.settings.dbStep) || 2.5;
+  const wStep = num(S.settings.wStep) || 1;
   const sw = (k, lbl) => `<button class="prefrow" data-act="toggle" data-v="${k}" role="switch" aria-checked="${S.settings[k] ? 'true' : 'false'}">
     <span class="lbl">${esc(lbl)}</span><span class="sw ${S.settings[k] ? 'on' : ''}"></span></button>`;
   const seg = (act, val, on, text) => `<button class="chip ${on ? 'on' : ''}" data-act="${act}" data-v="${val}">${esc(text)}</button>`;
@@ -1004,7 +996,7 @@ function settingsBody() {
       ${sw('plateCalc', t('plate_calc'))}
       ${sw('programWarnings', t('program_warn'))}
       ${numRow(t('bar_weight'), 'barw', num(S.settings.barWeight), t('kg'), 'decimal')}
-      <div class="prefrow"><span class="lbl">${esc(t('db_step'))}, ${esc(t('kg'))}</span><div class="seg">${seg('dbstep', '2', dbStep === 2, '2')}${seg('dbstep', '2.5', dbStep === 2.5, '2.5')}</div></div>
+      <div class="prefrow"><span class="lbl">${esc(t('w_step'))}, ${esc(t('kg'))}</span><div class="seg">${seg('wstep', '0.5', wStep === 0.5, '0.5')}${seg('wstep', '1', wStep === 1, '1')}</div></div>
       <div class="prefrow"><span class="lbl">${esc(t('start_w'))} / ${esc(t('goal'))}, ${esc(t('kg'))}</span>
         <input type="text" inputmode="decimal" class="numin" data-f="startw" value="${num(S.settings.startWeight)}" aria-label="${esc(t('start_w'))}">
         <input type="text" inputmode="decimal" class="numin" data-f="goalw" value="${num(S.settings.goalWeight)}" aria-label="${esc(t('goal'))}"></div>
@@ -1129,15 +1121,15 @@ function renderRestBar() {
 /* ============ STEPPER ============ */
 /* A step writes state, saves and patches that one input. It never calls render():
    render() would destroy the input mid-hold and focus would die. */
-function applyStep(ei, si, fld, dir, micro) {
+function applyStep(ei, si, fld, dir) {
   const entry = S.active && S.active.entries[ei];
   const set = entry && entry.sets[si];
   if (!set) { stopHold(); return; }
   const ex = exById(entry.exId);
-  const step = micro ? MICRO_STEP : stepFor(ex, fld);
+  const step = stepFor(ex, fld);
   const input = document.querySelector(`input[data-e="${ei}"][data-s="${si}"][data-fld="${fld}"]`);
   const base = hasVal(set[fld]) ? num(set[fld]) : (input ? num(input.value) : 0);
-  let v = dir > 0 ? Math.floor(base / step + 1e-6) * step + step : Math.ceil(base / step - 1e-6) * step - step;
+  let v = base + dir * step;
   if (v < 0) v = 0;
   set[fld] = String(+v.toFixed(2));
   save();
@@ -1148,18 +1140,18 @@ function startHold(ev, btn) {
   ev.preventDefault();
   stopHold();
   const ei = +btn.dataset.e, si = +btn.dataset.s, fld = btn.dataset.fld, dir = btn.dataset.dir === 'up' ? 1 : -1;
-  hold = { btn, ei, si, fld, dir, micro: false, timer: null, iv: null, n: 0 };
+  hold = { btn, ei, si, fld, dir, timer: null, iv: null, n: 0 };
   btn.classList.add('held');
-  applyStep(ei, si, fld, dir, false);
+  applyStep(ei, si, fld, dir);
+  /* holding repeats the same step as a tap, at an even pace you can stop on */
   hold.timer = setTimeout(() => {
     if (!hold) return;
-    hold.micro = fld === 'w';
     hold.iv = setInterval(() => {
       if (!hold) return;
-      applyStep(hold.ei, hold.si, hold.fld, hold.dir, hold.micro);
-      if (++hold.n > 240) stopHold();
-    }, 250);
-  }, 400);
+      applyStep(hold.ei, hold.si, hold.fld, hold.dir);
+      if (++hold.n > 200) stopHold();
+    }, 300);
+  }, 500);
 }
 function stopHold() {
   if (!hold) return;
@@ -1462,7 +1454,7 @@ function onClick(ev) {
     case 'toggle': S.settings[v] = !S.settings[v]; save(); refreshSettings(); render(); break;
     case 'lang': S.settings.lang = v; save(); render(); refreshSettings(); break;
     case 'theme': S.settings.theme = v; applyTheme(); save(); refreshSettings(); break;
-    case 'dbstep': S.settings.dbStep = num(v); save(); refreshSettings(); render(); break;
+    case 'wstep': S.settings.wStep = num(v); save(); refreshSettings(); render(); break;
     case 'restore-ex': restoreExercise(v); refreshSettings(); render(); break;
     case 'del-tpl': if (confirm(t('confirm_delete'))) { deleteTemplate(v); refreshSettings(); render(); } break;
 
