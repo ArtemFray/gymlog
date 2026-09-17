@@ -171,6 +171,15 @@ header h1.wordmark {
 }
 header .hslot { display: flex; align-items: center; flex: none; }
 header .hslot:empty { display: none; }
+/* how long the session has been running. Same spot on every screen, only
+   while a workout is open; tapping it goes back to the logger. */
+header .elapsed {
+  flex: none; min-height: var(--tap); padding: 0 var(--s-2);
+  display: grid; place-items: center;
+  font: 600 var(--t-base)/1 var(--f-sans); color: var(--ink2);
+  font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+}
+header .elapsed:active { color: var(--ink); }
 header #hlead { display: flex; align-items: center; flex: none; }
 /* the Progress sub-views put a back chevron where the mark sits */
 header .back {

@@ -7,6 +7,7 @@ let route = 'home';
 let ui = { exFilter: 'all', exSearch: '', statsEx: null, showMeas: false, histOpen: null, curEntry: null };
 let rest = { endsAt: 0, iv: null, total: 0 };
 let audioCtx = null;
+let clockIv = null;
 let resizeT = null;
 
 /* transient, never persisted: pending soft delete, stepper hold, row gesture */
@@ -54,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('contextmenu', (ev) => {
     if (ev.target.closest('.setline, .setlive .head, .stepper')) ev.preventDefault();
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else tickClock(); });
   fitViewport();
   window.addEventListener('resize', () => { fitViewport(); clearTimeout(resizeT); resizeT = setTimeout(drawCharts, 150); });
   window.addEventListener('orientationchange', () => setTimeout(fitViewport, 120));
@@ -126,7 +127,7 @@ function render() {
   const h1 = $('#title');
   h1.classList.toggle('wordmark', route === 'home');
   h1.textContent = route === 'home' ? 'FREILIFT'
-    : route === 'log' ? (S.active.name || t('in_progress'))
+    : route === 'log' ? (shortName(S.active.name) || t('in_progress'))
     : SUB_ROUTES[route] ? t(SUB_ROUTES[route])
     : t(titles[route] || 'app');
   renderChrome();
@@ -138,6 +139,32 @@ function render() {
   renderNav();
   renderRestBar();
   drawCharts();
+  tickClock();
+}
+
+/* ---- session clock ----
+   The only thing on screen that has to keep moving while nothing is tapped,
+   so it patches its own element once a second and never calls render(). */
+function elapsedStr(iso) {
+  const sec = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
+}
+function tickClock() {
+  const el = $('#elapsed');
+  if (!el) return;
+  /* editing an old workout would count from the day it happened */
+  if (S.active && !S.active.editing) {
+    el.textContent = elapsedStr(S.active.startedAt);
+    el.hidden = false;
+    el.setAttribute('aria-label', t('duration'));
+    if (!clockIv) clockIv = setInterval(tickClock, 1000);
+  } else {
+    el.hidden = true;
+    el.textContent = '';
+    if (clockIv) { clearInterval(clockIv); clockIv = null; }
+  }
 }
 
 /* header action slot + the flex:none rows around main#app */
@@ -1586,7 +1613,7 @@ function onClick(ev) {
     case 'start-empty': startWorkout(null); ui.curEntry = null; go('log'); break;
     case 'start-tpl': closeAllSheets(); startWorkout(v); ui.curEntry = null; go('log'); break;
     case 'all-tpl': openTemplates(); break;
-    case 'resume': go('log'); break;
+    case 'resume': if (route !== 'log') go('log'); break;
     case 'settings': closeAllSheets(); openSettings(); break;
     case 'ex-groups': openGroups(); break;
 
