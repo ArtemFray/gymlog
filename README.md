@@ -1,4 +1,4 @@
-# GymLog — personal workout tracker (PWA) — v2
+# FREILIFT — personal workout tracker (PWA) — v4
 
 Offline web app. No backend, no account, no App Store. All data is stored in your iPhone's browser storage.
 
@@ -6,8 +6,10 @@ Offline web app. No backend, no account, no App Store. All data is stored in you
 
 | File | Purpose |
 |---|---|
-| `index.html` | App shell + all styling |
-| `data.js` | 80 seeded exercises (EN/RU), muscle groups, Day A/B templates, translations |
+| `index.html` | App shell |
+| `style.css` | All styling: design tokens, both themes, every component |
+| `serif-latin.woff2`, `serif-cyrillic.woff2` | Source Serif 4 SemiBold, used at 28px and up. OFL 1.1, licence in `OFL-SourceSerif4.txt` |
+| `data.js` | 190 seeded exercises (EN/RU), muscle groups, 9 templates, translations |
 | `info.js` | Per-exercise how-to notes (EN/RU) + secondary muscle groups |
 | `store.js` | Data model, localStorage persistence, all stats math |
 | `views.js` | Screens, charts, muscle map, rest timer, plate calculator, template editor |
@@ -15,12 +17,12 @@ Offline web app. No backend, no account, no App Store. All data is stored in you
 | `manifest.webmanifest` | PWA metadata (icon, name, standalone mode) |
 | `icon-*.png` | App icons |
 
-All 11 files must sit in the **same folder**. Nothing to build, nothing to install.
+All files must sit in the **same folder**. Nothing to build, nothing to install.
 
 ## Upgrading from v1
 
 1. Upload all files to the repo, overwriting the old ones. `info.js` is new — it must be added or the app won't load.
-2. `sw.js` already carries the bumped cache name (`gymlog-v2`), so the update takes effect on its own.
+2. `sw.js` already carries the bumped cache name (`freilift-v4`), so the update takes effect on its own.
 3. Close the app fully (swipe it away from the app switcher) and reopen it twice.
 
 Your logged data is untouched by an update — it lives in browser storage keyed to the URL, not in the files.
@@ -58,10 +60,10 @@ Your logged data is untouched by an update — it lives in browser storage keyed
 Upload the changed file(s) to the repo (GitHub: open file → pencil icon → paste → commit), **and** bump the cache version in `sw.js`:
 
 ```js
-const CACHE = 'gymlog-v2';   // was v1
+const CACHE = 'freilift-v4';   // was v3.7
 ```
 
-Without the bump, the service worker keeps serving the old cached version. After the bump, close and reopen the app twice for the new version to take effect.
+The worker fetches from the network first and falls back to the cache, so a deploy shows on the next open. Bump the cache name anyway when you change the file list.
 
 ---
 
@@ -79,18 +81,18 @@ Without the bump, the service worker keeps serving the old cached version. After
 
 | Screen | What it does |
 |---|---|
-| **Today** | Start an empty workout or launch a template. Week/total counters, current body weight, streak. |
-| **Log** (active workout) | Add exercises, log sets (weight × reps, reps-only, or duration). Previous session's numbers shown per set row. Rest timer auto-starts when you tick a set. Reorder, per-exercise notes, plate calculator on barbell lifts. |
+| **Workout** (tab) | Start an empty workout or launch one of your three most recent templates; the rest open in a sheet. Week/total counters, current body weight, streak. |
+| **Workout** (running) | One exercise at a time: the set you are on, the sets you logged, nothing else. The ⋯ menu holds finish, add exercise, name, notes, plate calculator and settings. Rest takes over the whole screen. |
 | **History** | All past workouts. Tap → detail → Repeat / Save as template / Edit / Delete. |
-| **Exercises** | 80 preloaded exercises by muscle group with search and filter. Add your own (name EN/RU, group, equipment, tracking type, description). Tap any exercise for a how-to note, a muscle map, a YouTube form-video link, PRs and full history. |
+| **Exercises** | 190 preloaded exercises by muscle group with search and a group filter. Add your own (name EN/RU, group, equipment, tracking type, description). Tap any exercise for a how-to note, a muscle map, a YouTube form-video link, PRs and full history. |
 | **Templates** | Create your own from scratch (Today → **+ New**), edit any existing one (✎), or save the workout you're currently doing as a template. Per exercise you set the target number of sets and the rep range — those targets drive the progression hints. |
-| **Stats** | Workouts, avg/week, week streak, total tonnage. 12-week volume chart. 30-day muscle-group split. Per-exercise estimated-1RM progression chart (Epley). |
-| **Body** | Weight log with **7-day rolling average** (not single readings), weekly rate vs your 0.18–0.20 kg/wk target, progress bar toward 75 kg, optional waist/chest/arm/thigh/neck. |
+| **Stats** (in Settings) | Workouts, avg/week, week streak, total tonnage. 12-week volume chart. 30-day muscle-group split. Per-exercise estimated-1RM progression chart (Epley). |
+| **Body** (in Settings) | Weight log with **7-day rolling average** (not single readings), weekly rate vs your 0.18–0.20 kg/wk target, progress bar toward 75 kg, optional waist/chest/arm/thigh/neck. |
 | **Settings** | EN/RU, dark/light, all optional features on/off, rest duration, bar weight, start/goal weight, template management, export/import/wipe. |
 
 ### Program-specific behaviour
 
-- **Day A / Day B templates** are preloaded exactly as written in your mass-gain program, with target sets and rep ranges.
+- **Full body A / Full body B** are preloaded exactly as written in your mass-gain program, with target sets and rep ranges. Seven more balanced templates ship alongside them.
 - **Progression hints** — when you hit the top of the rep range on every set of an exercise, the app tells you to add weight next session (your double-progression rule). Toggle in Settings.
 - **Program warnings** — exercises your program flags (barbell back squat, deadlift, heavy barbell bench/OHP, etc.) show a warning with the recommended substitution when you add them. Toggle in Settings.
 

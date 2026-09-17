@@ -1,4 +1,4 @@
-/* GymLog UI */
+/* FREILIFT UI */
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -7,7 +7,6 @@ let route = 'home';
 let ui = { exFilter: 'all', exSearch: '', statsEx: null, showMeas: false, histOpen: null, curEntry: null };
 let rest = { endsAt: 0, iv: null, total: 0 };
 let audioCtx = null;
-let clockIv = null;
 let resizeT = null;
 
 /* transient, never persisted: pending soft delete, stepper hold, row gesture */
@@ -21,7 +20,6 @@ const SWIPE_MIN = 64;
 const LONG_MS = 500;
 
 const loc = () => (S.settings.lang === 'ru' ? 'ru-RU' : 'en-GB');
-const pad2 = (n) => String(n).padStart(2, '0');
 const fmtInt = (n) => String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е');
 const hasVal = (v) => v !== '' && v != null;
@@ -68,14 +66,12 @@ function applyTheme() {
 }
 
 /* ============ icons ============ */
-/* 24px line icons. .f = body tinted when the tab is active, .dot = always solid */
-const NAV_ICON = {
-  home: '<rect class="f" x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 9.8h17M8 3v4M16 3v4"/><circle class="dot" cx="12" cy="15.1" r="1.9"/>',
-  history: '<path d="M4.3 13a7.8 7.8 0 1 0 2.2-6.6"/><path d="M4.2 3.6v3.9h3.9"/><path d="M12 8.2v4.4l3 1.8"/>',
-  exercises: '<rect class="f" x="5.2" y="6.5" width="3.3" height="11" rx="1.1"/><rect class="f" x="15.5" y="6.5" width="3.3" height="11" rx="1.1"/><rect class="f" x="2.2" y="9.2" width="3" height="5.6" rx="1"/><rect class="f" x="18.8" y="9.2" width="3" height="5.6" rx="1"/><path d="M8.5 12h7"/>',
-  stats: '<path d="M3.5 20.5h17"/><rect class="f" x="5" y="12.5" width="3.2" height="5.5" rx="1"/><rect class="f" x="10.4" y="8.5" width="3.2" height="9.5" rx="1"/><rect class="f" x="15.8" y="4" width="3.2" height="14" rx="1"/>',
-  body: '<rect class="f" x="3.5" y="3.5" width="17" height="17" rx="4.8"/><path d="M8 10.2a5.6 5.6 0 0 1 8 0"/><path d="M12 12.3l1.8-2.7"/>',
-};
+/* the FREILIFT mark: an F whose top arm is a loaded bar. Inline, so it
+   inherits currentColor and costs no request. Same file as the app icons. */
+const MARK = (cls) => `<svg class="${cls}" viewBox="0 0 64 64" fill="currentColor" aria-hidden="true">
+  <rect x="3" y="12" width="7.5" height="21" rx="2"/><rect x="53.5" y="12" width="7.5" height="21" rx="2"/>
+  <rect x="5" y="18.5" width="54" height="7" rx="1.5"/><rect x="16" y="18.5" width="7" height="34.5" rx="1.5"/>
+  <rect x="23" y="35" width="19" height="7" rx="1.5"/></svg>`;
 const ICON_MORE = '<svg viewBox="0 0 18 18" aria-hidden="true"><circle class="solid" cx="3.8" cy="9" r="1.5"/><circle class="solid" cx="9" cy="9" r="1.5"/><circle class="solid" cx="14.2" cy="9" r="1.5"/></svg>';
 const ICON_PLATES = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M1.5 9h15"/><rect x="4.2" y="4" width="2.8" height="10" rx=".8"/><rect x="11" y="4" width="2.8" height="10" rx=".8"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M11.8 3.6l2.6 2.6-8 8-3.2.6.6-3.2z"/></svg>';
@@ -83,18 +79,17 @@ const ICON_UP = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 14.5V3.
 const ICON_SEARCH = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4L14 14"/></svg>';
 
 /* ============ nav ============ */
+/* three tabs, plain labels. Stats and Body are rows in the settings sheet:
+   five tabs meant five labels too small to read. */
 const TABS = [
-  { id: 'home', k: 'tab_home' },
-  { id: 'history', k: 'tab_history' },
+  { id: 'home', k: 'tab_workout' },
   { id: 'exercises', k: 'tab_exercises' },
-  { id: 'stats', k: 'tab_stats' },
-  { id: 'body', k: 'tab_body' },
+  { id: 'history', k: 'tab_history' },
 ];
 function renderNav() {
   $('#nav').innerHTML = TABS.map((tb) => {
     const on = route === tb.id || (route === 'log' && tb.id === 'home');
-    return `<button data-act="tab" data-v="${tb.id}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>
-       <svg viewBox="0 0 24 24" aria-hidden="true">${NAV_ICON[tb.id]}</svg><span>${esc(t(tb.k))}</span></button>`;
+    return `<button data-act="tab" data-v="${tb.id}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>${esc(t(tb.k))}</button>`;
   }).join('');
 }
 function go(r) {
@@ -109,7 +104,9 @@ function render() {
   if (route === 'log' && !S.active) route = 'home';
   document.documentElement.lang = S.settings.lang === 'ru' ? 'ru' : 'en';
   const titles = { history: 'tab_history', exercises: 'tab_exercises', stats: 'tab_stats', body: 'tab_body' };
-  $('#title').textContent = route === 'home' ? 'GymLog'
+  const h1 = $('#title');
+  h1.classList.toggle('wordmark', route === 'home');
+  h1.textContent = route === 'home' ? 'FREILIFT'
     : route === 'log' ? (S.active.name || t('in_progress'))
     : t(titles[route] || 'app');
   renderChrome();
@@ -117,37 +114,38 @@ function render() {
   $('#app').innerHTML = v();
   renderNav();
   renderRestBar();
-  fitWells();
   drawCharts();
-  tickClock();
 }
 
-/* flex:none rows around main#app: session bar, pinned search, action bar */
+/* header action slot + the flex:none rows around main#app */
 function renderChrome() {
   const shell = $('#shell'), main = $('#app');
+  const onLog = route === 'log' && !!S.active;
 
-  let sb = $('#shell > .sessionbar');
-  if (route === 'log' && S.active) {
-    if (!sb) { sb = document.createElement('div'); sb.className = 'sessionbar'; shell.insertBefore(sb, main); }
-    sb.innerHTML = sessionBarHtml();
-  } else if (sb) sb.remove();
+  $('#hslot').innerHTML = onLog
+    ? `<button class="hbtn" data-act="more" aria-label="${esc(t('more'))}">${ICON_MORE}</button>`
+    : route === 'exercises'
+      ? `<button class="hbtn plus" data-act="new-ex" aria-label="${esc(t('new_exercise'))}">+</button>`
+      : '';
+  /* during a workout the gear lives in the ⋯ menu: one button on the right */
+  $('#btn-settings').hidden = onLog;
+
+  /* session progress: the same information the set-count bar carried, no text */
+  let pr = $('#shell > .progress');
+  if (onLog) {
+    if (!pr) { pr = document.createElement('div'); pr.className = 'progress'; shell.insertBefore(pr, main); }
+    const c = sessionProgress();
+    pr.innerHTML = `<i style="width:${c.total ? (c.done / c.total * 100).toFixed(1) : 0}%"></i>`;
+  } else if (pr) pr.remove();
 
   let tb = $('#shell > .toolbar');
   if (route === 'exercises') {
-    if (!tb || tb.dataset.lang !== S.settings.lang) {
-      if (!tb) { tb = document.createElement('div'); tb.className = 'toolbar'; shell.insertBefore(tb, main); }
-      tb.dataset.lang = S.settings.lang;
+    if (!tb) { tb = document.createElement('div'); tb.className = 'toolbar'; shell.insertBefore(tb, main); }
+    if (tb.dataset.lang !== S.settings.lang || tb.dataset.filter !== ui.exFilter) {
+      tb.dataset.lang = S.settings.lang; tb.dataset.filter = ui.exFilter;
       tb.innerHTML = toolbarHtml();
-    } else {
-      tb.querySelectorAll('[data-act="exfilter"]').forEach((c) => c.classList.toggle('on', c.dataset.v === ui.exFilter));
     }
   } else if (tb) tb.remove();
-
-  let ab = $('#shell > .actionbar');
-  if (route === 'exercises') {
-    if (!ab) { ab = document.createElement('div'); ab.className = 'actionbar'; shell.insertBefore(ab, main.nextSibling); }
-    ab.innerHTML = `<button class="btn-primary" data-act="new-ex">+ ${esc(t('new_exercise'))}</button>`;
-  } else if (ab) ab.remove();
   syncNavOverlap();
 }
 
@@ -157,44 +155,30 @@ function syncNavOverlap() {
   $('#shell').classList.toggle('nav-over', !!main && main.nextElementSibling === $('#nav'));
 }
 
-function sessionBarHtml() {
-  let done = 0, total = 0, kg = 0;
-  S.active.entries.forEach((e) => {
-    const kind = exById(e.exId).kind || 'wr';
-    e.sets.forEach((st) => { total++; if (st.done) { done++; kg += setVolume(st, kind); } });
-  });
-  return `<div class="stat"><span><b>${done}</b> / ${total} ${esc(t('sets_short'))}</span><span class="sep">·</span><span><b>${fmtInt(kg)}</b> ${esc(t('kg'))}</span></div>
-    <button class="pill" data-act="finish"><span>${esc(t('finish'))}</span></button>`;
+function sessionProgress() {
+  let done = 0, total = 0;
+  (S.active ? S.active.entries : []).forEach((e) => e.sets.forEach((st) => { total++; if (st.done) done++; }));
+  return { done, total };
 }
 
+/* search plus one group button. The chip row above the list is gone: it was a
+   second scrolling axis over a scrolling list. */
 function toolbarHtml() {
-  const chip = (id, text) => `<button class="chip ${ui.exFilter === id ? 'on' : ''}" data-act="exfilter" data-v="${id}">${esc(text)}</button>`;
+  const cur = ui.exFilter === 'all' ? t('all') : muscleLabel(ui.exFilter);
   return `<label class="search">${ICON_SEARCH}
       <input type="text" data-f="exsearch" value="${esc(ui.exSearch)}" placeholder="${esc(t('search_ex'))}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"></label>
-    <div class="chips">${chip('all', t('all'))}${MUSCLES.map((m) => chip(m.id, label(m))).join('')}</div>`;
-}
-
-function tickClock() {
-  const el = $('#elapsed');
-  if (!el) return;
-  if (route === 'log' && S.active && !S.active.editing) {
-    const sec = Math.max(0, (Date.now() - new Date(S.active.startedAt)) / 1000);
-    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
-    el.textContent = h ? `${h}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`;
-    if (!clockIv) clockIv = setInterval(tickClock, 1000);
-  } else {
-    el.textContent = '';
-    if (clockIv) { clearInterval(clockIv); clockIv = null; }
-  }
+    <button class="btn sm" data-act="ex-groups">${esc(cur)}</button>`;
 }
 
 /* ============ shared pieces ============ */
-function eyebrowRule(left, right, rightCls) {
-  const r = right != null && right !== '' ? `<span class="eyebrow ${rightCls || 'end'}">${esc(right)}</span>` : '';
-  return `<div class="eyebrow-rule"><span class="eyebrow">${esc(left)}</span><span class="fill"></span>${r}</div>`;
+function h2row(title, right) {
+  return `<div class="h2row"><h2>${esc(title)}</h2>${right || ''}</div>`;
+}
+function heading(title, count) {
+  return `<h2>${esc(title)}${count != null && count !== '' ? ` <span class="ct">· ${esc(count)}</span>` : ''}</h2>`;
 }
 function emptyState(title, sub, cls) {
-  return `<div class="empty ${cls || ''}"><div class="t">${esc(title)}</div>${sub ? `<div class="s">${esc(sub)}</div>` : ''}</div>`;
+  return `<div class="empty ${cls || ''}">${MARK('mark')}<div class="t">${esc(title)}</div>${sub ? `<div class="s">${esc(sub)}</div>` : ''}</div>`;
 }
 function kpi(v, k, unit, cls) {
   return `<div class="kpi"><div class="v${cls ? ' ' + cls : ''}">${esc(v)}${unit ? `<span class="u">${esc(unit)}</span>` : ''}</div><div class="k">${esc(k)}</div></div>`;
@@ -232,26 +216,20 @@ function viewHome() {
   let html = '';
 
   if (S.active) {
-    const n = activeSetCount();
-    const done = S.active.entries.reduce((a, e) => a + e.sets.filter((x) => x.done).length, 0);
-    html += `<section class="section">${eyebrowRule(t('in_progress'))}
+    const c = sessionProgress();
+    html += `<section class="section"><div class="screenmeta">${esc(t('in_progress'))}</div>
       <div class="exname">${esc(S.active.name || t('start_empty'))}</div>
-      <div class="exmeta">${done} / ${n} ${esc(t('sets_short'))} · ${esc(fmtDay(S.active.startedAt, S.settings.lang))}</div>
+      <div class="metaline">${esc(t('sets_of', { n: c.done, m: c.total }))} · ${esc(fmtDay(S.active.startedAt, S.settings.lang))}</div>
       <button class="btn-primary mt-4" data-act="resume">${esc(t('resume'))}</button></section>`;
   } else {
-    html += `<section class="section">
-      <div class="eyebrow-rule"><span class="eyebrow">${esc(t('start_from'))}</span><span class="fill"></span>
-        <button class="btn sm quiet" data-act="new-tpl">+ ${esc(t('new'))}</button></div>`;
+    html += `<section class="section">${heading(t('start_from'))}`;
     if (!S.templates.length) html += emptyState(t('empty_tpl_t'), t('empty_tpl_s'), 'left');
     else {
       const ordered = orderedTemplates();
-      html += `<div class="list">${ordered.slice(0, HOME_TPL).map(tplRow).join('')}`;
-      if (ordered.length > HOME_TPL) {
-        html += `<button class="listrow" data-act="all-tpl">
+      html += `<div class="list">${ordered.slice(0, HOME_TPL).map(tplRow).join('')}
+        <button class="listrow" data-act="all-tpl">
           <span class="grow"><span class="name">${esc(t('all_templates'))}</span><span class="meta">${esc(tn('tpl', ordered.length))}</span></span>
-          <span class="chev" aria-hidden="true">›</span></button>`;
-      }
-      html += '</div>';
+          <span class="chev" aria-hidden="true">›</span></button></div>`;
     }
     html += `<button class="btn mt-3" data-act="start-empty">${esc(t('start_empty'))}</button></section>`;
   }
@@ -292,18 +270,16 @@ function openTemplates() {
   el.dataset.sheet = 'templates';
 }
 
+/* two lines: a name and one supporting line, never more */
 function tplRow(tp) {
   const items = tp.items || [];
-  const names = items.map((i) => label(exById(i.exId))).slice(0, 3).join(' · ') + (items.length > 3 ? ' …' : '');
   const at = templateLastUsed()[tp.id];
   const meta = [tn('exn', items.length)];
-  if (tp.seeded) meta.push(t('program_note'));
   if (at) meta.push(new Date(at).toLocaleDateString(loc(), { day: 'numeric', month: 'short' }));
   return `<div class="listrow tight">
     <button class="rowbtn" data-act="start-tpl" data-v="${tp.id}">
       <span class="grow"><span class="name">${esc(label(tp) || tp.name)}</span>
-        <span class="meta">${esc(meta.join(' · '))}</span>
-        ${names ? `<span class="sub">${esc(names)}</span>` : ''}</span></button>
+        <span class="meta">${esc(meta.join(' · '))}</span></span></button>
     <button class="ibtn" data-act="edit-tpl" data-v="${tp.id}" aria-label="${esc(t('edit_template'))}">${ICON_EDIT}</button>
   </div>`;
 }
@@ -328,7 +304,7 @@ function viewHistory() {
     const mk = month(w);
     if (mk !== curMonth) {
       if (curMonth !== null) html += '</div></section>';
-      html += `<section class="section">${eyebrowRule(mk, counts[mk])}<div class="list">`;
+      html += `<section class="section">${heading(mk, counts[mk])}<div class="list">`;
       curMonth = mk;
     }
     html += workoutRow(w);
@@ -351,7 +327,7 @@ function viewExercises() {
   sessCounts = sessionCounts();
   return order.map((mid) => {
     const rows = groups[mid].sort((a, b) => label(a).localeCompare(label(b))).map(exRow).join('');
-    return `<section class="section">${eyebrowRule(muscleLabel(mid), groups[mid].length)}<div class="list">${rows}</div></section>`;
+    return `<section class="section">${heading(muscleLabel(mid), groups[mid].length)}<div class="list">${rows}</div></section>`;
   }).join('');
 }
 
@@ -363,13 +339,14 @@ function sessionCounts() {
   return c;
 }
 
+/* two lines. The warning tag moved to the detail sheet, where there is room
+   to say what is actually wrong. */
 function exRow(e) {
   const meta = [equipLabel(e.eq)];
   if (sessCounts[e.id]) meta.push(tn('sess', sessCounts[e.id]));
+  if (e.custom) meta.push(t('custom'));
   return `<button class="listrow" data-act="open-ex" data-v="${e.id}">
     <span class="grow"><span class="name">${esc(label(e))}</span><span class="meta">${esc(meta.filter(Boolean).join(' · '))}</span></span>
-    ${e.custom ? `<span class="tag">${esc(t('custom'))}</span>` : ''}
-    ${(S.settings.programWarnings && e.warn) ? '<span class="tag warn">!</span>' : ''}
     <span class="chev" aria-hidden="true">›</span></button>`;
 }
 
@@ -378,55 +355,59 @@ function exRow(e) {
    The current entry is the one the user focused, else the first with an unlogged set. */
 const liveSetIndex = (entry) => entry.sets.findIndex((x) => !x.done);
 
+/* An explicit pick wins; otherwise the first exercise with an unlogged set.
+   Logging the last set of an exercise clears the pick, so the screen advances. */
 function currentEntryIndex(w) {
   const c = ui.curEntry;
-  if (c != null && w.entries[c] && liveSetIndex(w.entries[c]) >= 0) return c;
+  if (c != null && w.entries[c]) return c;
   return w.entries.findIndex((e) => liveSetIndex(e) >= 0);
 }
 
+/* One screen, one job: the exercise being worked on, and nothing else.
+   Session totals, the clock, the target line and the note live one tap away. */
 function viewLog() {
   const w = S.active;
+  if (!w.entries.length) {
+    return emptyState(t('empty_log_t'), t('empty_log_s'))
+      + `<button class="btn-primary" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`;
+  }
   const cur = currentEntryIndex(w);
-  let html = '';
-  if (!w.entries.length) html += emptyState(t('empty_log_t'), t('empty_log_s'));
-  w.entries.forEach((e, ei) => { html += entryBlock(e, ei, w, ei === cur); });
-  html += `<button class="btn" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>
-  <section class="section">${eyebrowRule(t('this_session'))}
-    <label class="field"><span>${esc(t('workout_name'))}</span><input type="text" data-f="wname" value="${esc(w.name)}" placeholder="${esc(t('workout_name'))}"></label>
-    <label class="field"><span>${esc(t('notes'))}</span><textarea data-f="wnotes" placeholder="${esc(t('note_ph'))}">${esc(w.notes)}</textarea></label>
-    <button class="btn quiet" data-act="tpl-from-active">${esc(t('save_as_template'))}</button>
-    ${w.editing ? '' : `<button class="btn danger mt-2" data-act="discard">${esc(t('discard_workout'))}</button>`}
-  </section>`;
-  return html;
+  if (cur < 0) return doneBlock();
+  if (rest.endsAt) return restPanel(w, cur);
+  return entryBlock(w.entries[cur], cur, w);
 }
 
-function entryBlock(e, ei, w, isCur) {
+/* every set logged: the one thing left to do is finish */
+function doneBlock() {
+  const c = sessionProgress();
+  return `<div class="screenmeta">${esc(t('sets_of', { n: c.done, m: c.total }))}</div>
+    <div class="exname">${esc(t('all_done_t'))}</div>
+    <div class="metaline">${esc(t('all_done_s'))}</div>
+    <button class="btn-primary mt-5" data-act="finish">${esc(t('finish_workout'))}</button>
+    <button class="btn quiet mt-3" data-act="jump">${esc(t('switch_ex'))}</button>
+    <button class="btn quiet mt-2" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`;
+}
+
+function entryBlock(e, ei, w) {
   const ex = exById(e.exId);
   const kind = ex.kind || 'wr';
   const prev = lastPerformance(e.exId, w.id);
-  const live = isCur ? liveSetIndex(e) : -1;
-  const dim = !isCur && liveSetIndex(e) >= 0;
-  const target = e.target && e.target.lo ? `${e.target.sets} × ${e.target.lo}–${e.target.hi}` : '';
-  const meta = [muscleLabel(ex.m), equipLabel(ex.eq), target].filter(Boolean).join(' · ');
-  const status = entryStatus(e, kind);
+  const live = liveSetIndex(e);
 
-  const head = `<span class="exname${dim ? ' dim' : ''}">${esc(label(ex))}</span><span class="exmeta">${esc(meta)}</span>`;
-  let html = `<article class="exblock" data-entry="${ei}">
-    ${eyebrowRule(`${pad2(ei + 1)} / ${pad2(w.entries.length)}`, status || '', 'ok')}
-    <div class="exhead">
-      ${dim ? `<button class="grow exhead-btn" data-act="focus-entry" data-e="${ei}">${head}</button>` : `<div class="grow exhead-txt">${head}</div>`}
-      ${(S.settings.plateCalc && ex.eq === 'barbell') ? `<button class="ibtn" data-act="plates" data-v="${ei}" aria-label="${esc(t('plate_calc'))}">${ICON_PLATES}</button>` : ''}
-      <button class="ibtn" data-act="ex-menu" data-v="${ei}" aria-label="${esc(t('exercise_options'))}">${ICON_MORE}</button>
-    </div>`;
-
-  if (e.note) html += `<div class="exnote">${esc(e.note)}</div>`;
+  let html = `<button class="screenmeta" data-act="jump">
+      <span class="grow">${esc(t('ex_of', { n: ei + 1, m: w.entries.length }))}</span>
+      <span class="chev" aria-hidden="true">›</span></button>
+    <article class="exblock" data-entry="${ei}">
+      <div class="exname">${esc(label(ex))}</div>`;
   if (S.settings.programWarnings && ex.warn) html += `<div class="note">${esc(t(ex.warn === 'back' ? 'warn_back' : 'warn_shoulder'))}</div>`;
+  /* the coaching note is one tap away in the exercise menu, not always on screen */
+  if (live >= 0) html += liveBlock(e, ei, live, kind, ex, prev);
 
   const pd = pendingDelete && pendingDelete.entryRef === e ? pendingDelete : null;
   html += '<div class="ledger">';
   e.sets.forEach((st, si) => {
     if (pd && pd.si === si) html += undoStrip(pd, ei);
-    html += si === live ? liveBlock(e, ei, si, kind, ex, prev) : setLine(st, ei, si, kind, !st.done, dim);
+    if (si !== live) html += setLine(st, ei, si, kind);
   });
   if (pd && pd.si >= e.sets.length) html += undoStrip(pd, ei);
   html += '</div>';
@@ -436,32 +417,44 @@ function entryBlock(e, ei, w, isCur) {
   return html;
 }
 
-function entryStatus(e, kind) {
-  if (kind === 'time' || !e.target || !e.target.lo) return null;
-  const ws = e.sets.filter((x) => x.done && !x.warm);
-  if (ws.length && ws.every((x) => num(x.r) >= e.target.lo)) return t('on_target');
-  return null;
-}
-
+/* one 17px line: "22.5 kg × 10". The unit is spelled out, once. */
 function setValsHtml(st, kind) {
-  const u = (s) => `<span class="u">${esc(s)}</span>`;
-  const X = '<span class="x">×</span>';
   if (!hasVal(st.w) && !hasVal(st.r) && !hasVal(st.s)) return NA;
   if (kind === 'time') return hasVal(st.s) ? esc(fmtClock(num(st.s))) : NA;
   const r = hasVal(st.r) ? esc(num(st.r)) : NA;
-  if (kind === 'reps') return `${r}${u(t('unit_reps'))}${num(st.w) > 0 ? `${X}+${esc(fmtNum(num(st.w), 2))}${u(t('kg'))}` : ''}`;
-  return `${hasVal(st.w) ? esc(fmtNum(num(st.w), 2)) : NA}${u(t('kg'))}${X}${r}`;
+  if (kind === 'reps') return num(st.w) > 0 ? `${r} × +${esc(fmtNum(num(st.w), 2))} ${esc(t('kg'))}` : `${r} ${esc(t('unit_reps'))}`;
+  return `${hasVal(st.w) ? esc(fmtNum(num(st.w), 2)) : NA} ${esc(t('kg'))} × ${r}`;
 }
 
-function setLine(st, ei, si, kind, pending, focusable) {
-  const cls = ['setline', st.warm ? 'warm' : '', pending ? 'pending' : ''].filter(Boolean).join(' ');
-  const act = pending && focusable ? ` data-act="focus-entry"` : '';
-  return `<div class="${cls}" data-e="${ei}" data-s="${si}"${act}>
-    <span class="idx">${si + 1}</span>
+function setLine(st, ei, si, kind) {
+  const cls = ['setline', st.warm ? 'warm' : '', st.done ? '' : 'pending'].filter(Boolean).join(' ');
+  const idx = t('set_n', { n: si + 1 }) + (st.warm ? ' · ' + t('warmup') : '');
+  return `<div class="${cls}" data-e="${ei}" data-s="${si}">
     <span class="vals">${setValsHtml(st, kind)}</span>
-    ${st.warm ? `<span class="tag">${esc(t('warmup'))}</span>` : ''}
-    ${st.done ? '<span class="done" aria-hidden="true">✓</span>' : ''}
+    <span class="idx">${esc(idx)}</span>
+    <span class="done" aria-hidden="true">${st.done ? '✓' : ''}</span>
   </div>`;
+}
+
+/* rest owns the whole screen: at arm's length, nobody is touching the phone */
+function restPanel(w, cur) {
+  const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
+  const nx = upNextName(w, cur);
+  return `<div class="rest" role="timer">
+    <div class="lbl">${esc(t('rest'))}</div>
+    <div class="t">${esc(fmtClock(left))}</div>
+    <div class="row">
+      <button class="add" data-act="rest-add">${esc(t('add30'))}</button>
+      <button class="skip" data-act="rest-skip">${esc(t('skip'))}</button>
+    </div>
+    ${nx ? `<div class="upnext"><div class="lbl">${esc(t('up_next'))}</div><div class="name">${esc(nx)}</div></div>` : ''}
+  </div>`;
+}
+function upNextName(w, cur) {
+  const e = w.entries[cur];
+  if (e && liveSetIndex(e) >= 0) return label(exById(e.exId));
+  const nx = w.entries.find((x, i) => i !== cur && liveSetIndex(x) >= 0);
+  return nx ? label(exById(nx.exId)) : '';
 }
 
 function undoStrip(pd, ei) {
@@ -499,47 +492,35 @@ function stepFor(ex, fld) {
   return num(S.settings.wStep) || 1;
 }
 
-function hintText(ex, kind) {
-  const parts = [];
-  if (kind === 'time') parts.push(t('hint_steps', { n: 5 }));
-  else if (kind === 'wr') parts.push(t('hint_steps', { n: fmtNum(stepFor(ex, 'w'), 2) }));
-  parts.push(t('hint_hold_repeat'), t('hint_type'));
-  return parts.join(' · ');
-}
-
-function stepper(ei, si, fld, value, mode, unit) {
+/* label on the left, 60px filled buttons on the right. The unit is in the
+   label, not in the well: v3 printed "kg" three times per set. */
+function steprow(lbl, ei, si, fld, value, mode) {
   const a = `data-e="${ei}" data-s="${si}" data-fld="${fld}"`;
-  return `<div class="stepper">
-    <button data-act="step" data-dir="dn" ${a} aria-label="−">−</button>
-    <label class="well"><input type="text" inputmode="${mode}" ${a} value="${esc(value)}" placeholder="0" autocomplete="off" enterkeyhint="done"><span class="unit">${esc(unit)}</span></label>
-    <button data-act="step" data-dir="up" ${a} aria-label="+">+</button>
-  </div>`;
+  return `<div class="steprow"><span class="lbl">${esc(lbl)}</span>
+    <div class="stepper">
+      <button data-act="step" data-dir="dn" ${a} aria-label="−">−</button>
+      <label class="well"><input type="text" inputmode="${mode}" ${a} value="${esc(value)}" placeholder="0" autocomplete="off" enterkeyhint="done"></label>
+      <button data-act="step" data-dir="up" ${a} aria-label="+">+</button>
+    </div></div>`;
 }
 
 function liveBlock(e, ei, si, kind, ex, prev) {
   const st = e.sets[si];
   const pf = prefillFor(e, si, prev);
   const val = (f) => (hasVal(st[f]) ? st[f] : (pf[f] != null ? pf[f] : ''));
-  let steppers;
-  if (kind === 'time') steppers = stepper(ei, si, 's', val('s'), 'numeric', t('unit_sec'));
-  else if (kind === 'reps') steppers = stepper(ei, si, 'r', val('r'), 'numeric', t('unit_reps')) + stepper(ei, si, 'w', val('w'), 'decimal', t('unit_pluskg'));
-  else steppers = stepper(ei, si, 'w', val('w'), 'decimal', t('kg')) + stepper(ei, si, 'r', val('r'), 'numeric', t('unit_reps'));
+  let rows;
+  if (kind === 'time') rows = steprow(t('time'), ei, si, 's', val('s'), 'numeric');
+  else if (kind === 'reps') rows = steprow(t('reps'), ei, si, 'r', val('r'), 'numeric') + steprow(`+${t('kg')}`, ei, si, 'w', val('w'), 'decimal');
+  else rows = steprow(t('weight'), ei, si, 'w', val('w'), 'decimal') + steprow(t('reps'), ei, si, 'r', val('r'), 'numeric');
   const last = lastStr(prev, si, kind);
+  const head = t('set_of', { n: si + 1, m: e.sets.length }) + (st.warm ? ' · ' + t('warmup') : '');
   return `<div class="setlive" data-e="${ei}" data-s="${si}">
-    <div class="head" data-e="${ei}" data-s="${si}"><span class="n">${esc(t('set_n', { n: si + 1 }))}</span>
-      ${st.warm ? `<span class="tag">${esc(t('warmup'))}</span>` : ''}
+    <div class="head" data-e="${ei}" data-s="${si}"><span class="n">${esc(head)}</span>
       ${last ? `<span class="prev">${esc(t('last'))} ${esc(last)}</span>` : ''}</div>
-    ${steppers}
-    <div class="stepper-hint">${esc(hintText(ex, kind))}</div>
+    ${rows}
     <button class="btn-primary" data-act="tick" data-e="${ei}" data-s="${si}">${esc(t('log_set', { n: si + 1 }))}</button>
   </div>`;
 }
-
-function fitWell(inp) {
-  const len = Math.max(1, (inp.value || inp.placeholder || '').length);
-  inp.style.width = (len + 0.4) + 'ch';
-}
-function fitWells() { document.querySelectorAll('.well input').forEach(fitWell); }
 
 /* ============ STATS ============ */
 function viewStats() {
@@ -551,12 +532,12 @@ function viewStats() {
     ${kpi(st.streak, `${t('streak')} (${t('weeks')})`)}
     ${kpi(fmtNum(st.totalVolume / 1000, 1), t('total_volume'), 't')}
   </div></section>
-  <section class="section">${eyebrowRule(t('vol_12w'), t('tonnes'))}<div class="chartbox" id="chart-vol"></div></section>`;
+  <section class="section">${heading(t('vol_12w'), t('tonnes'))}<div class="chartbox" id="chart-vol"></div></section>`;
 
   const split = muscleSplit(30);
   if (split.length) {
     const max = Math.max(1, ...split.map((s) => s.sets));
-    html += `<section class="section">${eyebrowRule(t('split_30'))}<div class="list">` + split.map((s) => `
+    html += `<section class="section">${heading(t('split_30'))}<div class="list">` + split.map((s) => `
       <div class="splitrow"><div class="row between"><span class="nm">${esc(muscleLabel(s.m))}</span>
         <span class="ct">${s.sets} ${esc(t('sets_short'))}</span></div>${hbar(s.sets / max)}</div>`).join('') + '</div></section>';
   }
@@ -564,7 +545,7 @@ function viewStats() {
   const used = [...new Set(S.workouts.flatMap((w) => w.entries.map((e) => e.exId)))];
   if (used.length) {
     if (!ui.statsEx || !used.includes(ui.statsEx)) ui.statsEx = used[0];
-    html += `<section class="section">${eyebrowRule(t('per_exercise'))}
+    html += `<section class="section">${heading(t('per_exercise'))}
       <select data-f="statsex" aria-label="${esc(t('per_exercise'))}">` +
       used.map((id) => `<option value="${id}" ${id === ui.statsEx ? 'selected' : ''}>${esc(label(exById(id)))}</option>`).join('') + '</select>';
     const pr = exercisePR(ui.statsEx);
@@ -600,18 +581,18 @@ function viewBody() {
     ${kpi(wc == null ? NA : (wc >= 0 ? '+' : '') + fmtNum(wc, 2), t('weekly_change'), '', wcCls)}
     ${kpi(cur != null ? fmtNum(goal - cur, 1) : NA, t('to_go'), cur != null ? t('kg') : '')}
   </div></section>
-  <section class="section progress">
+  <section class="section goalbar">
     <div class="ends"><span>${esc(t('start_w'))} ${esc(fmtNum(start, 1))}</span><span>${esc(t('goal'))} ${esc(fmtNum(goal, 1))}</span></div>
     ${hbar(prog)}
     <div class="hint">${esc(t('target_rate'))}</div>
   </section>`;
 
   if (s.length > 1) {
-    html += `<section class="section">${eyebrowRule(t('body_weight'), t('kg'))}<div class="chartbox" id="chart-body"></div>
+    html += `<section class="section">${heading(t('body_weight'), t('kg'))}<div class="chartbox" id="chart-body"></div>
       <div class="legend"><span><i class="ink"></i>${esc(t('trend7'))}</span><span><i class="l2"></i>${esc(t('body_weight'))}</span><span><i class="ok"></i>${esc(t('goal'))} ${esc(fmtNum(goal, 1))}</span></div></section>`;
   }
 
-  html += `<section class="section">${eyebrowRule(t('log_weight'))}
+  html += `<section class="section">${heading(t('log_weight'))}
     <div class="formgrid">
       <label class="field"><span>${esc(t('date'))}</span><input type="date" data-f="bdate" value="${ymd(new Date())}"></label>
       <label class="field"><span>${esc(t('body_weight'))}, ${esc(t('kg'))}</span><input type="text" inputmode="decimal" class="numin" data-f="bweight" placeholder="0"></label>
@@ -624,10 +605,10 @@ function viewBody() {
   </section>`;
 
   if (S.body.length) {
-    html += `<section class="section">${eyebrowRule(t('history_for'), S.body.length)}<div class="list">` + [...S.body].reverse().slice(0, 40).map((b) => {
+    html += `<section class="section">${heading(t('history_for'), S.body.length)}<div class="list">` + [...S.body].reverse().slice(0, 40).map((b) => {
       const meas = MEAS.filter((k) => b[k]).map((k) => `${t(k)} ${b[k]}`);
       return `<div class="listrow"><div class="grow">
-          <div class="value">${b.weight ? `${esc(fmtNum(num(b.weight), 1))}<span class="u">${esc(t('kg'))}</span>` : NA}</div>
+          <div class="value">${b.weight ? `${esc(fmtNum(num(b.weight), 1))} ${esc(t('kg'))}` : NA}</div>
           <div class="meta">${esc([fmtYmd(b.date)].concat(meas).join(' · '))}</div></div>
         <button class="ibtn" data-act="del-body" data-v="${b.id}" aria-label="${esc(t('delete'))}">×</button></div>`;
     }).join('') + '</div></section>';
@@ -916,7 +897,7 @@ function openExercise(id) {
   const pr = exercisePR(id);
   const h = exerciseHistory(id);
   const type = t(ex.kind === 'time' ? 'type_time' : ex.kind === 'reps' ? 'type_reps' : 'type_wr');
-  let body = `<div class="exmeta">${esc([muscleLabel(ex.m), equipLabel(ex.eq), type].join(' · '))}</div>`;
+  let body = `<div class="metaline">${esc([muscleLabel(ex.m), equipLabel(ex.eq), type].join(' · '))}</div>`;
   if (S.settings.programWarnings && ex.warn) body += `<div class="note">${esc(t(ex.warn === 'back' ? 'warn_back' : 'warn_shoulder'))}</div>`;
   const how = exHowTo(id);
   if (how) body += `<p class="prose mt-3">${esc(how)}</p>`;
@@ -929,7 +910,7 @@ function openExercise(id) {
       ${ex.kind === 'wr' ? kpi(fmtNum(pr.e1rm, 1), t('est_1rm'), t('kg')) : kpi(pr.reps, t('reps'))}</div>`;
     body += `<h2 class="mt-5">${esc(t('history_for'))}</h2><div class="list">` + h.slice(-12).reverse().map((x) => `<div class="listrow">
       <div class="grow"><div class="meta">${esc(fmtDay(x.date, S.settings.lang))}</div>
-      <div class="sub mono">${esc(x.sets.map((st) => setStr(st, ex.kind)).join(' · '))}</div></div></div>`).join('') + '</div>';
+      <div class="sub">${esc(x.sets.map((st) => setStr(st, ex.kind)).join(' · '))}</div></div></div>`).join('') + '</div>';
   } else {
     body += emptyState(t('no_history_ex'), t('empty_exhist_s'));
   }
@@ -946,12 +927,12 @@ function openWorkout(id) {
   const dur = workoutDuration(w);
   const parts = [fmtDate(w.startedAt, S.settings.lang), `${workoutSets(w)} ${t('sets_short')}`, `${workoutReps(w)} ${t('reps_total')}`, `${fmtInt(workoutVolume(w))} ${t('kg')}`];
   if (dur) parts.push(`${dur} ${t('min')}`);
-  let body = `<div class="exmeta">${esc(parts.join(' · '))}</div>`;
+  let body = `<div class="metaline">${esc(parts.join(' · '))}</div>`;
   if (w.notes) body += `<div class="exnote">${esc(w.notes)}</div>`;
   body += '<div class="list mt-3">' + w.entries.map((e) => {
     const ex = exById(e.exId);
     return `<div class="listrow"><div class="grow"><div class="name">${esc(label(ex))}</div>
-      <div class="sub mono">${esc(e.sets.map((st) => setStr(st, ex.kind)).join(' · '))}</div>
+      <div class="sub">${esc(e.sets.map((st) => setStr(st, ex.kind)).join(' · '))}</div>
       ${e.note ? `<div class="sub">${esc(e.note)}</div>` : ''}</div></div>`;
   }).join('') + '</div>';
   body += `<button class="btn-primary mt-4" data-act="repeat-workout" data-v="${id}">${esc(t('repeat'))}</button>
@@ -994,7 +975,7 @@ function redrawTpl() {
           ${numField('reps_hi', 'hi', i, it.hi, '12')}
         </div></div>`).join('') + '</div>' : emptyState(t('tpl_empty'), '', 'left')}
     <button class="btn mt-3" data-act="tpl-add-ex">+ ${esc(t('add_exercise'))}</button>
-    <p class="prose small mt-3">${esc(t('sets_target'))} / ${esc(t('rep_range'))} → ${esc(t('progression'))}</p>
+    <p class="prose mt-3">${esc(t('sets_target'))} / ${esc(t('rep_range'))} → ${esc(t('progression'))}</p>
     <button class="btn-primary mt-3" data-act="tpl-save">${esc(t('save'))}</button>
     ${S.templates.some((x) => x.id === tplDraft.id) ? `<button class="btn danger mt-2" data-act="tpl-delete">${esc(t('delete'))}</button>` : ''}`;
 }
@@ -1005,7 +986,7 @@ function openPlates(preset) {
     <label class="field"><span>${esc(t('target_weight'))}, ${esc(t('kg'))}</span>
       <input type="text" inputmode="decimal" class="numin" id="pl-w" value="${preset || ''}"></label>
     <div id="pl-out"></div>
-    <div class="exmeta mt-4">${esc(t('bar_weight'))}: ${esc(fmtNum(num(S.settings.barWeight), 2))} ${esc(t('kg'))}</div>`);
+    <div class="metaline mt-4">${esc(t('bar_weight'))}: ${esc(fmtNum(num(S.settings.barWeight), 2))} ${esc(t('kg'))}</div>`);
   const out = el.querySelector('#pl-out'), inp = el.querySelector('#pl-w');
   const calc = () => {
     const target = num(inp.value);
@@ -1035,10 +1016,18 @@ function settingsBody() {
 
   return `
     <div class="list">
+      <button class="listrow" data-act="tab" data-v="stats">
+        <span class="grow"><span class="name">${esc(t('tab_stats'))}</span><span class="meta">${esc(t('open_stats'))}</span></span>
+        <span class="chev" aria-hidden="true">›</span></button>
+      <button class="listrow" data-act="tab" data-v="body">
+        <span class="grow"><span class="name">${esc(t('tab_body'))}</span><span class="meta">${esc(t('open_body'))}</span></span>
+        <span class="chev" aria-hidden="true">›</span></button>
+    </div>
+    <div class="list mt-5">
       <div class="prefrow"><span class="lbl">${esc(t('lang'))}</span><div class="seg">${seg('lang', 'en', lang === 'en', 'EN')}${seg('lang', 'ru', lang === 'ru', 'RU')}</div></div>
       <div class="prefrow"><span class="lbl">${esc(t('theme'))}</span><div class="seg">${seg('theme', 'dark', theme !== 'light', t('dark'))}${seg('theme', 'light', theme === 'light', t('light'))}</div></div>
     </div>
-    <h2 class="mt-5">${esc(t('settings'))}</h2>
+    <h2 class="mt-5">${esc(t('tab_workout'))}</h2>
     <div class="list">
       ${sw('restTimer', t('rest_timer'))}
       ${numRow(t('rest_default'), 'restsec', num(S.settings.restDefault), t('unit_sec'), 'numeric')}
@@ -1052,8 +1041,7 @@ function settingsBody() {
         <input type="text" inputmode="decimal" class="numin" data-f="startw" value="${num(S.settings.startWeight)}" aria-label="${esc(t('start_w'))}">
         <input type="text" inputmode="decimal" class="numin" data-f="goalw" value="${num(S.settings.goalWeight)}" aria-label="${esc(t('goal'))}"></div>
     </div>
-    <div class="eyebrow-rule mt-5"><span class="eyebrow">${esc(t('templates'))}</span><span class="fill"></span>
-      <button class="btn sm quiet" data-act="new-tpl">+ ${esc(t('new'))}</button></div>
+    ${h2row(t('templates'), `<button class="btn sm quiet" data-act="new-tpl">+ ${esc(t('new'))}</button>`)}
     <div class="list">${S.templates.map((tp) => `<div class="listrow tight">
       <button class="rowbtn" data-act="edit-tpl" data-v="${tp.id}"><span class="grow"><span class="name">${esc(label(tp) || tp.name)}</span>
         <span class="meta">${esc(tn('exn', (tp.items || []).length))}</span></span><span class="chev" aria-hidden="true">›</span></button>
@@ -1062,7 +1050,7 @@ function settingsBody() {
       <span class="grow"><span class="name">${esc(label(e))}</span><span class="meta">${esc(muscleLabel(e.m))} · ${esc(equipLabel(e.eq))}</span></span>
       <button class="btn sm" data-act="restore-ex" data-v="${e.id}">${esc(t('restore'))}</button></div>`).join('')}</div>` : ''}
     <h2 class="mt-5">${esc(t('data'))}</h2>
-    <div class="exmeta">${esc(t('last_backup'))}: ${dsb === null ? esc(t('never')) : (dsb === 0 ? esc(t('today')) : dsb + esc(t('days_ago')))}</div>
+    <div class="metaline">${esc(t('last_backup'))}: ${dsb === null ? esc(t('never')) : (dsb === 0 ? esc(t('today')) : dsb + esc(t('days_ago')))}</div>
     <button class="btn mt-3" data-act="export">${esc(t('export'))}</button>
     <button class="btn mt-2" data-act="import">${esc(t('import'))}</button>
     <button class="btn danger mt-2" data-act="wipe">${esc(t('wipe'))}</button>
@@ -1080,6 +1068,49 @@ function refreshSettings() {
   el.querySelector('.sheet-body').innerHTML = settingsBody();
 }
 
+/* --- the workout's own menu: everything the logger no longer shows --- */
+function openSessionMenu() {
+  const w = S.active;
+  if (!w) return;
+  const ei = currentEntryIndex(w);
+  const ex = ei >= 0 ? exById(w.entries[ei].exId) : null;
+  const el = sheet(t('session_menu'), `
+    <button class="btn-primary" data-act="finish">${esc(t('finish_workout'))}</button>
+    <button class="btn mt-3" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>
+    ${ei >= 0 ? `<button class="btn mt-2" data-act="ex-menu" data-v="${ei}">${esc(t('exercise_options'))}</button>` : ''}
+    ${(ex && S.settings.plateCalc && ex.eq === 'barbell') ? `<button class="btn mt-2" data-act="plates" data-v="${ei}">${esc(t('plate_calc'))}</button>` : ''}
+    <label class="field mt-4"><span>${esc(t('workout_name'))}</span>
+      <input type="text" data-f="wname" value="${esc(w.name)}" placeholder="${esc(t('workout_name'))}"></label>
+    <label class="field"><span>${esc(t('notes'))}</span>
+      <textarea data-f="wnotes" placeholder="${esc(t('note_ph'))}">${esc(w.notes)}</textarea></label>
+    <button class="btn quiet" data-act="tpl-from-active">${esc(t('save_as_template'))}</button>
+    <button class="btn quiet mt-2" data-act="settings">${esc(t('settings'))}</button>
+    ${w.editing ? '' : `<button class="btn danger mt-4" data-act="discard">${esc(t('discard_workout'))}</button>`}`);
+  el.dataset.sheet = 'session';
+}
+
+/* --- jump between the session's exercises --- */
+function openJump() {
+  const w = S.active;
+  if (!w) return;
+  const cur = currentEntryIndex(w);
+  const rows = w.entries.map((e, i) => {
+    const done = e.sets.filter((x) => x.done).length;
+    return `<button class="listrow" data-act="focus-entry" data-e="${i}">
+      <span class="grow"><span class="name">${esc(label(exById(e.exId)))}</span>
+      <span class="meta">${esc(t('sets_of', { n: done, m: e.sets.length }))}</span></span>
+      <span class="chev" aria-hidden="true">${i === cur ? '•' : '›'}</span></button>`;
+  }).join('');
+  sheet(t('switch_ex'), `<div class="list">${rows}</div>
+    <button class="btn mt-3" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`);
+}
+
+/* --- muscle group filter for the Exercises list --- */
+function openGroups() {
+  const chip = (id, text) => `<button class="chip ${ui.exFilter === id ? 'on' : ''}" data-act="exfilter" data-v="${id}">${esc(text)}</button>`;
+  sheet(t('group'), `<div class="chips">${chip('all', t('all'))}${MUSCLES.map((m) => chip(m.id, label(m))).join('')}</div>`);
+}
+
 /* --- set menu (long-press a set) --- */
 function openSetMenu(ei, si) {
   const entry = S.active && S.active.entries[ei];
@@ -1087,7 +1118,7 @@ function openSetMenu(ei, si) {
   if (!st) return;
   const ex = exById(entry.exId);
   sheet(`${label(ex)} · ${t('set_n', { n: si + 1 })}`, `
-    <div class="exmeta">${esc(setStr(st, ex.kind || 'wr'))}</div>
+    <div class="metaline">${esc(setStr(st, ex.kind || 'wr'))}</div>
     <button class="btn mt-4" data-act="warm" data-e="${ei}" data-s="${si}">${esc(t(st.warm ? 'mark_working' : 'mark_warm'))}</button>
     ${st.done ? `<button class="btn mt-2" data-act="tick" data-e="${ei}" data-s="${si}">${esc(t('edit_set'))}</button>` : ''}
     <button class="btn danger mt-2" data-act="del-set" data-e="${ei}" data-s="${si}">${esc(t('delete_set'))}</button>`);
@@ -1127,14 +1158,19 @@ function startRest(sec) {
   if (rest.iv) clearInterval(rest.iv);
   rest.iv = setInterval(tickRest, 250);
   try { if (!audioCtx && window.AudioContext) audioCtx = new AudioContext(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
-  renderRestBar();
+  restChrome();
 }
+/* the countdown is patched in place, never re-rendered: a render every 250 ms
+   would kill the keyboard and the caret */
 function tickRest() {
   if (!rest.endsAt) return;
   if (Date.now() >= rest.endsAt) { endRest(true); return; }
-  const el = document.querySelector('#restbar .t');
-  if (el) el.textContent = fmtClock(Math.max(0, (rest.endsAt - Date.now()) / 1000));
-  else renderRestBar();
+  const txt = fmtClock(Math.max(0, (rest.endsAt - Date.now()) / 1000));
+  const panel = document.querySelector('#app .rest .t');
+  if (panel) panel.textContent = txt;
+  const bar = document.querySelector('#restbar .t');
+  if (bar) bar.textContent = txt;
+  if (!panel && !bar) restChrome();
 }
 function endRest(notify) {
   if (rest.iv) clearInterval(rest.iv);
@@ -1143,7 +1179,15 @@ function endRest(notify) {
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     beep();
   }
-  renderRestBar();
+  restChrome();
+}
+/* on the logger the rest state is the whole screen, so it needs a render;
+   everywhere else it is the thin bar above the tabs */
+function restChrome() {
+  if (route === 'log' && S.active) {
+    render();
+    const m = $('#app'); if (m) m.scrollTop = 0;
+  } else renderRestBar();
 }
 function beep() {
   try {
@@ -1159,7 +1203,8 @@ function beep() {
 }
 function renderRestBar() {
   const old = document.getElementById('restbar');
-  if (!rest.endsAt) { if (old) { old.remove(); syncNavOverlap(); } return; }
+  const show = rest.endsAt && !(route === 'log' && S.active);
+  if (!show) { if (old) { old.remove(); syncNavOverlap(); } return; }
   if (old) return;
   const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
   const el = document.createElement('div'); el.id = 'restbar'; el.setAttribute('role', 'timer');
@@ -1185,7 +1230,7 @@ function applyStep(ei, si, fld, dir) {
   if (v < 0) v = 0;
   set[fld] = String(+v.toFixed(2));
   save();
-  if (input) { input.value = set[fld]; fitWell(input); }
+  if (input) input.value = set[fld];
 }
 
 function startHold(ev, btn) {
@@ -1311,7 +1356,6 @@ function onInput(ev) {
     const e = +el.dataset.e, s = +el.dataset.s;
     const entry = S.active.entries[e]; if (!entry || !entry.sets[s]) return;
     entry.sets[s][fld] = el.value;
-    if (el.closest('.well')) fitWell(el);
     save(); return;
   }
   const tf = el.dataset.tf;
@@ -1362,7 +1406,8 @@ function onClick(ev) {
   if (act !== 'undo-set' && act !== 'del-set' && act !== 'step') commitDelete();
 
   switch (act) {
-    case 'tab': closeAllSheets(); go(v); break;
+    /* the Workout tab goes straight back to the session while one is running */
+    case 'tab': closeAllSheets(); go(v === 'home' && S.active ? 'log' : v); break;
     case 'close-sheet': closeSheet(); break;
 
     /* home */
@@ -1370,9 +1415,13 @@ function onClick(ev) {
     case 'start-tpl': closeAllSheets(); startWorkout(v); ui.curEntry = null; go('log'); break;
     case 'all-tpl': openTemplates(); break;
     case 'resume': go('log'); break;
+    case 'settings': closeAllSheets(); openSettings(); break;
+    case 'ex-groups': openGroups(); break;
 
     /* workout editing */
-    case 'pick-ex': openPicker((exId) => {
+    case 'more': openSessionMenu(); break;
+    case 'jump': openJump(); break;
+    case 'pick-ex': if (b.closest('.sheet')) closeAllSheets(); openPicker((exId) => {
       S.active.entries.push({ exId, note: '', target: null, sets: [{ w: '', r: '', done: false }] });
       ui.curEntry = S.active.entries.length - 1;
       save(); render();
@@ -1387,9 +1436,10 @@ function onClick(ev) {
       save(); render(); revealLiveSet(); break;
     }
     case 'focus-entry': {
-      ui.curEntry = ei; render();
-      const blk = document.querySelector(`[data-entry="${ei}"]`);
-      if (blk) blk.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      closeSheetIfIn(b);
+      ui.curEntry = ei;
+      const m = $('#app'); if (m) m.scrollTop = 0;
+      render();
       break;
     }
     case 'step': break;
@@ -1422,6 +1472,8 @@ function onClick(ev) {
         if (num(st[need]) <= 0) missing = document.querySelector(`#app input[data-e="${ei}"][data-s="${si}"][data-fld="${need}"]`);
         if (missing) { save(); missing.focus(); break; }
         st.done = true;
+        /* the last set of an exercise hands the screen to the next one */
+        ui.curEntry = liveSetIndex(entry) < 0 ? null : ei;
         save(); render(); revealLiveSet();
         startRest(num(S.settings.restDefault) || 120);
       } else {
@@ -1431,8 +1483,9 @@ function onClick(ev) {
       }
       break;
     }
-    case 'ex-menu': openEntryMenu(+v); break;
+    case 'ex-menu': closeSheetIfIn(b); openEntryMenu(+v); break;
     case 'plates': {
+      closeSheetIfIn(b);
       const e = S.active.entries[+v];
       const last = e.sets.filter((s2) => num(s2.w) > 0).pop();
       openPlates(last ? num(last.w) : '');
@@ -1441,6 +1494,7 @@ function onClick(ev) {
     case 'finish': {
       if (activeSetCount() === 0) { alert(t('empty_workout')); break; }
       if (!confirm(t('finish_confirm'))) break;
+      closeAllSheets();
       const w = S.active;
       if (w.editing) {
         w.editing = false; w.endedAt = w.endedAt || new Date().toISOString();
@@ -1450,7 +1504,7 @@ function onClick(ev) {
       } else finishWorkout();
       ui.curEntry = null; endRest(false); go('history'); break;
     }
-    case 'discard': if (confirm(t('discard_confirm'))) { discardWorkout(); ui.curEntry = null; endRest(false); go('home'); } break;
+    case 'discard': if (confirm(t('discard_confirm'))) { closeAllSheets(); discardWorkout(); ui.curEntry = null; endRest(false); go('home'); } break;
 
     /* history */
     case 'open-workout': openWorkout(v); break;
@@ -1478,7 +1532,7 @@ function onClick(ev) {
     }
 
     /* exercises */
-    case 'exfilter': ui.exFilter = v; render(); { const m = $('#app'); if (m) m.scrollTop = 0; } break;
+    case 'exfilter': closeSheetIfIn(b); ui.exFilter = v; render(); { const m = $('#app'); if (m) m.scrollTop = 0; } break;
     case 'open-ex': openExercise(v); break;
     case 'new-ex': openNewExercise(); break;
     case 'edit-ex': { const ex = exById(v); closeSheet(); openNewExercise(null, ex); break; }
@@ -1542,7 +1596,7 @@ function onClick(ev) {
     case 'wipe': if (confirm(t('wipe_confirm')) && confirm(t('wipe_confirm'))) { localStorage.removeItem(KEY); location.reload(); } break;
 
     /* rest */
-    case 'rest-add': rest.endsAt += 30000; renderRestBar(); break;
+    case 'rest-add': rest.endsAt += 30000; tickRest(); break;
     case 'rest-skip': endRest(false); break;
   }
 }
@@ -1553,7 +1607,7 @@ function doExport() {
   const blob = new Blob([data], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `gymlog-backup-${ymd(new Date())}.json`;
+  a.href = url; a.download = `freilift-backup-${ymd(new Date())}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
   refreshSettings();

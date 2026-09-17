@@ -1,4 +1,4 @@
-/* GymLog — state, persistence, computations */
+/* FREILIFT — state, persistence, computations */
 
 const KEY = 'gymlog.v1';
 const SCHEMA = 1;

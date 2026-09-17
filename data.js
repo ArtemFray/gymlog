@@ -1,4 +1,4 @@
-/* GymLog — seed data: muscle groups, equipment, exercise library, i18n */
+/* FREILIFT — seed data: muscle groups, equipment, exercise library, i18n */
 
 const MUSCLES = [
   { id: 'chest',      en: 'Chest',      ru: 'Грудь' },
@@ -374,7 +374,7 @@ const SEED_TEMPLATES = [
 
 const I18N = {
   en: {
-    app: 'GymLog',
+    app: 'FREILIFT',
     tab_home: 'Today', tab_history: 'History', tab_exercises: 'Exercises', tab_stats: 'Stats', tab_body: 'Body',
     settings: 'Settings',
     start_empty: 'Start empty workout', start_from: 'Start from template',
@@ -445,13 +445,18 @@ const I18N = {
     empty_body_t: 'No weigh-ins yet.', empty_body_s: 'Log your weight above. The 7-day trend starts after two entries.',
     empty_exhist_s: 'It shows up here after you log it once.',
     plates_left: 'Not exact with your plates: {n} kg left over',
-    version: 'GymLog · v3 · data stays on this device',
+    version: 'FREILIFT · v4 · data stays on this device',
     date: 'Date',
     all_templates: 'All templates', tpl_one: '{n} template', tpl_many: '{n} templates',
     sess_one: '{n} session', sess_many: '{n} sessions', exn_one: '{n} exercise', exn_many: '{n} exercises',
+    /* v4 */
+    tab_workout: 'Workout', ex_of: 'Exercise {n} of {m}', more: 'More', group: 'Group',
+    switch_ex: 'Switch exercise', session_menu: 'This workout', up_next: 'Up next',
+    finish_workout: 'Finish workout', all_done_t: 'Every set is logged.', all_done_s: 'Finish the workout to save it.',
+    sets_of: '{n} of {m} sets', set_of: 'Set {n} of {m}', open_stats: 'Stats and charts', open_body: 'Body weight',
   },
   ru: {
-    app: 'GymLog',
+    app: 'FREILIFT',
     tab_home: 'Сегодня', tab_history: 'История', tab_exercises: 'Упражнения', tab_stats: 'Статистика', tab_body: 'Тело',
     settings: 'Настройки',
     start_empty: 'Начать пустую тренировку', start_from: 'Начать по шаблону',
@@ -522,9 +527,14 @@ const I18N = {
     empty_body_t: 'Пока нет записей веса.', empty_body_s: 'Запишите вес выше. Тренд за 7 дней появится после двух записей.',
     empty_exhist_s: 'История появится после первой записи.',
     plates_left: 'Не набирается точно: остаётся {n} кг',
-    version: 'GymLog · v3 · данные хранятся только на этом устройстве',
+    version: 'FREILIFT · v4 · данные хранятся только на этом устройстве',
     date: 'Дата',
     all_templates: 'Все шаблоны', tpl_one: '{n} шаблон', tpl_few: '{n} шаблона', tpl_many: '{n} шаблонов',
     sess_one: '{n} тренировка', sess_few: '{n} тренировки', sess_many: '{n} тренировок', exn_one: '{n} упражнение', exn_few: '{n} упражнения', exn_many: '{n} упражнений',
+    /* v4 */
+    tab_workout: 'Тренировка', ex_of: 'Упражнение {n} из {m}', more: 'Ещё', group: 'Группа',
+    switch_ex: 'Другое упражнение', session_menu: 'Эта тренировка', up_next: 'Далее',
+    finish_workout: 'Завершить тренировку', all_done_t: 'Все подходы записаны.', all_done_s: 'Завершите тренировку, чтобы сохранить её.',
+    sets_of: '{n} из {m} подходов', set_of: 'Подход {n} из {m}', open_stats: 'Статистика и графики', open_body: 'Вес тела',
   },
 };
