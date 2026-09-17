@@ -148,6 +148,13 @@ function renderChrome() {
     if (!ab) { ab = document.createElement('div'); ab.className = 'actionbar'; shell.insertBefore(ab, main.nextSibling); }
     ab.innerHTML = `<button class="btn-primary" data-act="new-ex">+ ${esc(t('new_exercise'))}</button>`;
   } else if (ab) ab.remove();
+  syncNavOverlap();
+}
+
+/* content scrolls under the glass nav only when nothing sits between main and nav */
+function syncNavOverlap() {
+  const main = $('#app');
+  $('#shell').classList.toggle('nav-over', !!main && main.nextElementSibling === $('#nav'));
 }
 
 function sessionBarHtml() {
@@ -1119,7 +1126,7 @@ function beep() {
 }
 function renderRestBar() {
   const old = document.getElementById('restbar');
-  if (!rest.endsAt) { if (old) old.remove(); return; }
+  if (!rest.endsAt) { if (old) { old.remove(); syncNavOverlap(); } return; }
   if (old) return;
   const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
   const el = document.createElement('div'); el.id = 'restbar'; el.setAttribute('role', 'timer');
@@ -1127,6 +1134,7 @@ function renderRestBar() {
     <button data-act="rest-add">${esc(t('add30'))}</button>
     <button data-act="rest-skip">${esc(t('skip'))}</button>`;
   $('#shell').insertBefore(el, $('#nav'));
+  syncNavOverlap();
 }
 
 /* ============ STEPPER ============ */

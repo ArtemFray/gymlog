@@ -153,7 +153,7 @@ header .elapsed:empty { display: none; }
 
 main {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  overscroll-behavior: contain;
   padding: var(--s-4) var(--gutter) var(--s-6);
   width: 100%; max-width: 680px; margin: 0 auto;
 }
@@ -168,7 +168,9 @@ nav {
   backdrop-filter: saturate(160%) blur(22px);
   display: flex; padding: 4px 6px max(8px, env(safe-area-inset-bottom));
 }
-main:has(+ nav) { margin-bottom: calc(-1 * var(--nav-h)); padding-bottom: calc(var(--nav-h) + var(--s-6)); }
+/* set from JS (syncNavOverlap) when main#app sits directly above nav; :has() did not
+   re-evaluate on iOS when the action bar was inserted between them */
+#shell.nav-over > main { margin-bottom: calc(-1 * var(--nav-h)); padding-bottom: calc(var(--nav-h) + var(--s-6)); }
 nav button {
   flex: 1; min-width: 0; min-height: var(--tap);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
@@ -212,7 +214,7 @@ nav button.on svg .f { fill: currentColor; fill-opacity: .18; }
 
 /* bottom action bar, replaces the floating button */
 .actionbar {
-  flex: none; padding: 10px var(--gutter);
+  flex: none; position: relative; z-index: 25; padding: 10px var(--gutter);
   border-top: 1px solid var(--line); background: var(--bg);
 }
 .actionbar .btn-primary { height: 48px; max-width: 644px; margin: 0 auto; }
@@ -458,7 +460,7 @@ button.listrow, .rowbtn { width: 100%; text-align: left; color: inherit; }
 /* ------------------------------------------------------------ chips, tags */
 
 .chips {
-  display: flex; gap: 7px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  display: flex; gap: 7px; overflow-x: auto;
   scrollbar-width: none; padding-bottom: 2px;
 }
 .chips::-webkit-scrollbar { display: none; }
@@ -608,7 +610,6 @@ svg.hbar .val { fill: var(--ink2); }
   position: relative;
   background: var(--s1); width: 100%; max-width: 680px; margin: 0 auto;
   max-height: 88vh; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
   border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   padding: 10px var(--gutter) calc(var(--s-5) + env(safe-area-inset-bottom));
   box-shadow: var(--sheet-shadow);
