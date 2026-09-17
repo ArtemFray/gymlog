@@ -80,6 +80,7 @@ function blankState() {
     hiddenExercises: [],
     exerciseOverrides: {},   // id -> {desc}
     templates: clone(SEED_TEMPLATES),
+    seedRev: SEED_REV,
     workouts: [],
     body: [],
     active: null,
@@ -95,14 +96,40 @@ function load() {
     const parsed = JSON.parse(raw);
     S = Object.assign(blankState(), parsed);
     S.settings = Object.assign(clone(DEFAULT_SETTINGS), parsed.settings || {});
+    S.seedRev = parsed.seedRev || 1;
     // make sure seeded templates exist (unless user deleted them intentionally -> keep as is if any templates present)
     if (!Array.isArray(S.templates)) S.templates = clone(SEED_TEMPLATES);
+    if (upgradeSeeds()) save();
   } catch (e) {
     console.error('load failed', e);
     S = blankState();
   }
   return S;
 }
+/* Built-in templates added or renamed after install. Runs once per SEED_REV.
+   Never re-adds a built-in the user deleted, never renames one the user renamed,
+   and only adds a Russian note where the stored note is still the built-in one. */
+function upgradeSeeds() {
+  const rev = S.seedRev || 1;
+  if (rev >= SEED_REV) return false;
+  SEED_RENAMES.forEach(({ id, from }) => {
+    const tp = S.templates.find((x) => x.id === id);
+    const seed = SEED_TEMPLATES.find((x) => x.id === id);
+    if (!tp || !seed || tp.name !== from.name || (tp.name_ru || '') !== from.name_ru) return;
+    tp.name = seed.name; tp.name_ru = seed.name_ru;
+    (tp.items || []).forEach((it) => {
+      const si = seed.items.find((x) => x.exId === it.exId);
+      if (si && si.note_ru && !it.note_ru && (it.note || '') === si.note) it.note_ru = si.note_ru;
+    });
+  });
+  const have = new Set(S.templates.map((x) => x.id));
+  SEED_TEMPLATES.forEach((tp) => {
+    if ((tp.since || 1) > rev && !have.has(tp.id)) S.templates.push(clone(tp));
+  });
+  S.seedRev = SEED_REV;
+  return true;
+}
+
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); }
   catch (e) { console.error('save failed', e); alert('Storage full or unavailable — export a backup.'); }
@@ -170,7 +197,8 @@ function startWorkout(templateId) {
       const n = Math.max(1, Math.min(10, it.sets || 3));
       const sets = [];
       for (let i = 0; i < n; i++) sets.push({ w: '', r: '', done: false });
-      w.entries.push({ exId: it.exId, note: it.note || '', target: { sets: it.sets, lo: it.lo, hi: it.hi }, sets });
+      const note = (S.settings.lang === 'ru' && it.note_ru) || it.note || '';
+      w.entries.push({ exId: it.exId, note, target: { sets: it.sets, lo: it.lo, hi: it.hi }, sets });
     });
   } else {
     w = newWorkout('');
@@ -436,6 +464,9 @@ function importData(json) {
   if (!parsed || typeof parsed !== 'object' || !('workouts' in parsed)) throw new Error('bad file');
   S = Object.assign(blankState(), parsed);
   S.settings = Object.assign(clone(DEFAULT_SETTINGS), parsed.settings || {});
+  S.seedRev = parsed.seedRev || 1;
+  if (!Array.isArray(S.templates)) S.templates = clone(SEED_TEMPLATES);
+  upgradeSeeds();
   invalidateEx(); save();
 }
 function daysSinceBackup() {

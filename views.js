@@ -308,16 +308,24 @@ function viewExercises() {
   const order = MUSCLES.map((m) => m.id).filter((id) => groups[id]);
   Object.keys(groups).forEach((k) => { if (!order.includes(k)) order.push(k); });
 
+  sessCounts = sessionCounts();
   return order.map((mid) => {
     const rows = groups[mid].sort((a, b) => label(a).localeCompare(label(b))).map(exRow).join('');
     return `<section class="section">${eyebrowRule(muscleLabel(mid), groups[mid].length)}<div class="list">${rows}</div></section>`;
   }).join('');
 }
 
+/* sessions per exercise, counted once per render instead of once per row */
+let sessCounts = {};
+function sessionCounts() {
+  const c = {};
+  S.workouts.forEach((w) => w.entries.forEach((en) => { if (en.sets.length) c[en.exId] = (c[en.exId] || 0) + 1; }));
+  return c;
+}
+
 function exRow(e) {
-  const pr = exercisePR(e.id);
   const meta = [equipLabel(e.eq)];
-  if (pr) meta.push(tn('sess', pr.sessions));
+  if (sessCounts[e.id]) meta.push(tn('sess', sessCounts[e.id]));
   return `<button class="listrow" data-act="open-ex" data-v="${e.id}">
     <span class="grow"><span class="name">${esc(label(e))}</span><span class="meta">${esc(meta.filter(Boolean).join(' · '))}</span></span>
     ${e.custom ? `<span class="tag">${esc(t('custom'))}</span>` : ''}
@@ -793,6 +801,8 @@ function openPicker(onPick) {
     let list = allExercises();
     if (filter !== 'all') list = list.filter((e) => e.m === filter);
     if (q) list = list.filter((e) => exMatches(e, q));
+    const mOrder = MUSCLES.map((m) => m.id);
+    list.sort((a, b) => (mOrder.indexOf(a.m) - mOrder.indexOf(b.m)) || label(a).localeCompare(label(b)));
     const recent = [...new Set(S.workouts.slice(0, 12).flatMap((w) => w.entries.map((e) => e.exId)))].slice(0, 6);
     let h = '';
     if (!q && filter === 'all' && recent.length) {
@@ -800,7 +810,7 @@ function openPicker(onPick) {
         + recent.map((id) => `<button class="chip" data-pick="${id}">${esc(label(exById(id)))}</button>`).join('') + '</div>';
     }
     if (!list.length) return h + emptyState(t('empty_ex_t'), t('empty_ex_s'));
-    h += '<div class="list mt-3">' + list.slice(0, 200).map((e) => `
+    h += '<div class="list mt-3">' + list.slice(0, 500).map((e) => `
       <button class="listrow" data-pick="${e.id}"><span class="grow"><span class="name">${esc(label(e))}</span>
       <span class="meta">${esc(muscleLabel(e.m))} · ${esc(equipLabel(e.eq))}</span></span>
       ${(S.settings.programWarnings && e.warn) ? '<span class="tag warn">!</span>' : ''}</button>`).join('') + '</div>';
