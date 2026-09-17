@@ -208,10 +208,9 @@ function setStr(st, kind) {
 }
 
 /* ============ TODAY ============ */
+/* One job: start the right workout. The counters moved to Stats and the last
+   workout is the first row of History, so neither is repeated here. */
 function viewHome() {
-  const st = overallStats();
-  const ws = weightSeries();
-  const cur = ws.length ? ws[ws.length - 1].v : null;
   const dsb = daysSinceBackup();
   let html = '';
 
@@ -222,6 +221,7 @@ function viewHome() {
       <div class="metaline">${esc(t('sets_of', { n: c.done, m: c.total }))} · ${esc(fmtDay(S.active.startedAt, S.settings.lang))}</div>
       <button class="btn-primary mt-4" data-act="resume">${esc(t('resume'))}</button></section>`;
   } else {
+    html += homeContext();
     html += `<section class="section">${heading(t('start_from'))}`;
     if (!S.templates.length) html += emptyState(t('empty_tpl_t'), t('empty_tpl_s'), 'left');
     else {
@@ -234,20 +234,17 @@ function viewHome() {
     html += `<button class="btn mt-3" data-act="start-empty">${esc(t('start_empty'))}</button></section>`;
   }
 
-  html += `<section class="section"><h2>${esc(t('overall'))}</h2><div class="kpis">
-    ${kpi(st.thisWeek, t('this_week'))}
-    ${kpi(st.count, t('workouts'))}
-    ${kpi(cur ? fmtNum(cur, 1) : NA, t('body_weight'), cur ? t('kg') : '')}
-    ${kpi(st.streak, `${t('streak')} (${t('weeks')})`)}
-  </div></section>`;
-
-  if (S.workouts.length) {
-    html += `<section class="section"><h2>${esc(t('last_workout'))}</h2><div class="list ruled">${workoutRow(S.workouts[0])}</div></section>`;
-  }
-  const md = String.fromCharCode(8212);
-  if (dsb === null && S.workouts.length > 2) html += `<div class="note mt-4">${esc(t('backup_due', { n: md }).replace(md + ' ', ''))}</div>`;
+  if (dsb === null && S.workouts.length > 2) html += `<div class="note mt-4">${esc(t('backup_never'))}</div>`;
   else if (dsb !== null && dsb >= 14) html += `<div class="note mt-4">${esc(t('backup_due', { n: dsb }))}</div>`;
   return html;
+}
+
+/* one line instead of four tiles: how the week is going, when you last trained */
+function homeContext() {
+  if (!S.workouts.length) return '';
+  const st = overallStats();
+  const parts = [`${t('this_week')}: ${st.thisWeek}`, `${t('last_one')}: ${fmtDay(S.workouts[0].startedAt, S.settings.lang)}`];
+  return `<div class="screenmeta">${esc(parts.join(' · '))}</div>`;
 }
 
 /* Today shows only the most recently used templates; the rest open in a sheet */

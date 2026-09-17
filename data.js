@@ -411,7 +411,7 @@ const I18N = {
     bar_weight: 'Bar weight', data: 'Data', export: 'Export backup (JSON)', import: 'Import backup',
     wipe: 'Erase all data', wipe_confirm: 'Erase everything? This cannot be undone.',
     last_backup: 'Last backup', never: 'never', days_ago: 'd ago', today: 'today',
-    backup_due: 'No backup in {n} days — export one.',
+    backup_due: 'No backup in {n} days — export one.', backup_never: 'No backup yet. Export one.',
     progression_hit: 'Top of rep range hit on all sets → add weight next session.',
     warn_back: 'Your program flags this: axial spinal load. Prefer leg press / hack squat / machine squat.',
     warn_shoulder: 'Your program flags this: shoulder risk. Prefer dumbbell press with moderate load.',
@@ -454,6 +454,7 @@ const I18N = {
     switch_ex: 'Switch exercise', session_menu: 'This workout', up_next: 'Up next',
     finish_workout: 'Finish workout', all_done_t: 'Every set is logged.', all_done_s: 'Finish the workout to save it.',
     sets_of: '{n} of {m} sets', set_of: 'Set {n} of {m}', open_stats: 'Stats and charts', open_body: 'Body weight',
+    last_one: 'Last',
   },
   ru: {
     app: 'FREILIFT',
@@ -493,7 +494,7 @@ const I18N = {
     bar_weight: 'Вес грифа', data: 'Данные', export: 'Экспорт резервной копии (JSON)', import: 'Импорт копии',
     wipe: 'Удалить все данные', wipe_confirm: 'Удалить всё? Это необратимо.',
     last_backup: 'Последняя копия', never: 'никогда', days_ago: ' дн. назад', today: 'сегодня',
-    backup_due: 'Копии не было {n} дн. — сделайте экспорт.',
+    backup_due: 'Копии не было {n} дн. — сделайте экспорт.', backup_never: 'Резервной копии ещё нет. Сделайте экспорт.',
     progression_hit: 'Верх диапазона взят во всех подходах → добавьте вес в следующий раз.',
     warn_back: 'Программа не рекомендует: осевая нагрузка на позвоночник. Лучше жим ногами / гакк / присед в тренажёре.',
     warn_shoulder: 'Программа не рекомендует: риск для плеча. Лучше жим гантелей с умеренным весом.',
@@ -536,5 +537,6 @@ const I18N = {
     switch_ex: 'Другое упражнение', session_menu: 'Эта тренировка', up_next: 'Далее',
     finish_workout: 'Завершить тренировку', all_done_t: 'Все подходы записаны.', all_done_s: 'Завершите тренировку, чтобы сохранить её.',
     sets_of: '{n} из {m} подходов', set_of: 'Подход {n} из {m}', open_stats: 'Статистика и графики', open_body: 'Вес тела',
+    last_one: 'Последняя',
   },
 };
