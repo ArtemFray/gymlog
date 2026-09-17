@@ -55,8 +55,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ev.target.closest('.setline, .setlive .head, .stepper')) ev.preventDefault();
   });
   document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); });
-  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(drawCharts, 150); });
+  fitViewport();
+  window.addEventListener('resize', () => { fitViewport(); clearTimeout(resizeT); resizeT = setTimeout(drawCharts, 150); });
+  window.addEventListener('orientationchange', () => setTimeout(fitViewport, 120));
 });
+
+/* The shell takes its height from the web view itself, so the tab bar sits on
+   the bottom edge whatever the screen size. 100dvh stays as the fallback.
+   The keyboard does not change window.innerHeight on iOS, so this is stable. */
+function fitViewport() {
+  const h = window.innerHeight;
+  if (h > 200) document.documentElement.style.setProperty('--vh', h + 'px');
+}
 
 function applyTheme() {
   const th = S.settings.theme === 'light' ? 'light' : 'dark';
@@ -79,38 +89,51 @@ const ICON_UP = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M9 14.5V3.
 const ICON_SEARCH = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4L14 14"/></svg>';
 
 /* ============ nav ============ */
-/* three tabs, plain labels. Stats and Body are rows in the settings sheet:
-   five tabs meant five labels too small to read. */
+/* four tabs, plain labels, no icons. Stats and Body are one screen now. */
 const TABS = [
-  { id: 'home', k: 'tab_workout' },
-  { id: 'exercises', k: 'tab_exercises' },
+  { id: 'home', k: 'tab_home' },
+  { id: 'progress', k: 'tab_progress' },
   { id: 'history', k: 'tab_history' },
+  { id: 'exercises', k: 'tab_exercises' },
 ];
+/* Old routes must not white-screen: a saved route or an old link can still say
+   'stats' or 'body'. The logger and the four Progress sub-views light up their
+   parent tab. */
+const ROUTE_ALIAS = { stats: 'progress', body: 'progress' };
+const NAV_OF = { log: 'home', p_exercise: 'progress', p_split: 'progress', p_weight: 'progress', p_meas: 'progress' };
+const SUB_ROUTES = { p_exercise: 'per_exercise_row', p_split: 'split_row', p_weight: 'log_weight', p_meas: 'measurements' };
+const resolveRoute = (r) => ROUTE_ALIAS[r] || r;
 function renderNav() {
+  const cur = NAV_OF[route] || route;
   $('#nav').innerHTML = TABS.map((tb) => {
-    const on = route === tb.id || (route === 'log' && tb.id === 'home');
+    const on = cur === tb.id;
     return `<button data-act="tab" data-v="${tb.id}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>${esc(t(tb.k))}</button>`;
   }).join('');
 }
 function go(r) {
   commitDelete();
   stopHold();
-  route = r; render();
+  route = resolveRoute(r); render();
   const m = $('#app'); if (m) m.scrollTop = 0;
 }
 
 /* ============ render ============ */
 function render() {
+  route = resolveRoute(route);
   if (route === 'log' && !S.active) route = 'home';
   document.documentElement.lang = S.settings.lang === 'ru' ? 'ru' : 'en';
-  const titles = { history: 'tab_history', exercises: 'tab_exercises', stats: 'tab_stats', body: 'tab_body' };
+  const titles = { history: 'tab_history', exercises: 'tab_exercises', progress: 'tab_progress' };
   const h1 = $('#title');
   h1.classList.toggle('wordmark', route === 'home');
   h1.textContent = route === 'home' ? 'FREILIFT'
     : route === 'log' ? (S.active.name || t('in_progress'))
+    : SUB_ROUTES[route] ? t(SUB_ROUTES[route])
     : t(titles[route] || 'app');
   renderChrome();
-  const v = { home: viewHome, log: viewLog, history: viewHistory, exercises: viewExercises, stats: viewStats, body: viewBody }[route] || viewHome;
+  const v = {
+    home: viewHome, log: viewLog, history: viewHistory, exercises: viewExercises, progress: viewProgress,
+    p_exercise: viewPerExercise, p_split: viewMuscleSplit, p_weight: viewLogWeight, p_meas: viewMeasurements,
+  }[route] || viewHome;
   $('#app').innerHTML = v();
   renderNav();
   renderRestBar();
@@ -121,6 +144,13 @@ function render() {
 function renderChrome() {
   const shell = $('#shell'), main = $('#app');
   const onLog = route === 'log' && !!S.active;
+
+  /* the four Progress sub-views put a back chevron where the mark sits */
+  $('#hlead').innerHTML = SUB_ROUTES[route]
+    ? `<button class="back" data-act="tab" data-v="progress" aria-label="${esc(t('back'))}">‹</button>`
+    : MARK('mark');
+  /* a late backup is a dot on the gear, not a note on Today */
+  $('#btn-settings').classList.toggle('dot', backupDue());
 
   $('#hslot').innerHTML = onLog
     ? `<button class="hbtn" data-act="more" aria-label="${esc(t('more'))}">${ICON_MORE}</button>`
@@ -208,43 +238,115 @@ function setStr(st, kind) {
 }
 
 /* ============ TODAY ============ */
-/* One job: start the right workout. The counters moved to Stats and the last
-   workout is the first row of History, so neither is repeated here. */
+/* One job: start the right workout. Counters live on Progress, the full last
+   workout is the first row of History, the backup warning is a dot on the gear. */
 function viewHome() {
-  const dsb = daysSinceBackup();
-  let html = '';
-
+  /* state A: a workout is running. Nothing else renders. */
   if (S.active) {
-    const c = sessionProgress();
-    html += `<section class="section"><div class="screenmeta">${esc(t('in_progress'))}</div>
-      <div class="exname">${esc(S.active.name || t('start_empty'))}</div>
-      <div class="metaline">${esc(t('sets_of', { n: c.done, m: c.total }))} · ${esc(fmtDay(S.active.startedAt, S.settings.lang))}</div>
-      <button class="btn-primary mt-4" data-act="resume">${esc(t('resume'))}</button></section>`;
-  } else {
-    html += homeContext();
-    html += `<section class="section">${heading(t('start_from'))}`;
-    if (!S.templates.length) html += emptyState(t('empty_tpl_t'), t('empty_tpl_s'), 'left');
-    else {
-      const ordered = orderedTemplates();
-      html += `<div class="list">${ordered.slice(0, HOME_TPL).map(tplRow).join('')}
-        <button class="listrow" data-act="all-tpl">
-          <span class="grow"><span class="name">${esc(t('all_templates'))}</span><span class="meta">${esc(tn('tpl', ordered.length))}</span></span>
-          <span class="chev" aria-hidden="true">›</span></button></div>`;
-    }
-    html += `<button class="btn mt-3" data-act="start-empty">${esc(t('start_empty'))}</button></section>`;
+    const w = S.active;
+    return `<div class="todaymain">
+      <div class="eyebrow ok">${esc(t('in_progress'))}</div>
+      <div class="exname">${esc(w.name || t('start_empty'))}</div>
+      <div class="todaysub">${esc(tn('setsl', sessionProgress().done))} · ${esc(startedAgo(w.startedAt))}</div>
+      <button class="btn-primary" data-act="resume">${esc(t('resume'))}</button>
+      <p class="todaynote">${esc(t('in_progress_hint'))}</p>
+    </div>`;
   }
 
-  if (dsb === null && S.workouts.length > 2) html += `<div class="note mt-4">${esc(t('backup_never'))}</div>`;
-  else if (dsb !== null && dsb >= 14) html += `<div class="note mt-4">${esc(t('backup_due', { n: dsb }))}</div>`;
+  /* state B: nothing running. One recommendation, then the alternatives. */
+  const order = templatesByNext();
+  const next = order[0];
+  if (!next) {
+    return `<div class="todaymain">
+      <div class="exname">${esc(t('start_a_workout'))}</div>
+      <button class="btn-primary mt-4" data-act="start-empty">${esc(t('empty_workout'))}</button>
+    </div>`;
+  }
+
+  const last = S.workouts[0];
+  let html = `<div class="todaymain">
+    <div class="eyebrow">${esc(t('next_in_program'))}</div>
+    <div class="exname">${esc(label(next) || next.name)}</div>
+    <div class="todaysub">${esc(templateSummary(next))}</div>
+    <button class="btn-primary" data-act="start-tpl" data-v="${next.id}">${esc(t('start_day', { name: shortName(label(next) || next.name) }))}</button>`;
+
+  if (last) {
+    html += `<div class="todaylast"><span class="done" aria-hidden="true">✓</span>${esc((last.name || fmtDay(last.startedAt, S.settings.lang)) + ', ' + whenAgo(last.startedAt))}</div>`;
+  }
+
+  /* pushed to the bottom of the screen, where the thumb is */
+  const shown = order.slice(1, 1 + HOME_TPL);
+  html += `<div class="todayalt"><h2>${esc(t('train_else'))}</h2><div class="list">`;
+  shown.forEach((tp) => {
+    html += `<button class="listrow" data-act="start-tpl" data-v="${tp.id}">
+      <span class="grow">${esc(label(tp) || tp.name)}</span><span class="chev" aria-hidden="true">›</span></button>`;
+  });
+  if (S.templates.length > 1 + shown.length) {
+    html += `<button class="listrow" data-act="all-tpl">
+      <span class="grow">${esc(t('all_templates'))}</span><span class="chev" aria-hidden="true">›</span></button>`;
+  }
+  html += `<button class="listrow" data-act="start-empty">
+      <span class="grow">${esc(t('empty_workout'))}</span><span class="chev" aria-hidden="true">›</span></button>
+    </div></div></div>`;
   return html;
 }
 
-/* one line instead of four tiles: how the week is going, when you last trained */
-function homeContext() {
-  if (!S.workouts.length) return '';
-  const st = overallStats();
-  const parts = [`${t('this_week')}: ${st.thisWeek}`, `${t('last_one')}: ${fmtDay(S.workouts[0].startedAt, S.settings.lang)}`];
-  return `<div class="screenmeta">${esc(parts.join(' · '))}</div>`;
+/* Which day is next: score a template by the most recent workout that used any
+   of its exercises, oldest first. A template you have never trained wins
+   outright; ties keep the order in S.templates. */
+function templatesByNext() {
+  const all = S.templates || [];
+  if (!all.length) return [];
+  /* Only templates you have actually started are candidates. Without this the
+     never-trained rule keeps recommending library templates you never use
+     instead of the next day of your programme. */
+  const used = new Set(S.workouts.map((w) => w.templateId).filter(Boolean));
+  const tpls = all.some((tp) => used.has(tp.id)) ? all.filter((tp) => used.has(tp.id)) : all;
+  const lastSeen = new Map();
+  S.workouts.forEach((w) => {
+    const ts = new Date(w.startedAt).getTime();
+    (w.entries || []).forEach((e) => { const p = lastSeen.get(e.exId); if (p == null || ts > p) lastSeen.set(e.exId, ts); });
+  });
+  return tpls.map((tp, i) => {
+    let score = -Infinity;
+    (tp.items || []).forEach((it) => { const seen = lastSeen.get(it.exId); if (seen != null && seen > score) score = seen; });
+    return { tp, i, score };
+  }).sort((a, b) => (a.score === b.score ? a.i - b.i : a.score - b.score)).map((x) => x.tp);
+}
+
+/* the button says the day, not the whole subtitle: the full name is the
+   heading right above it */
+const shortName = (s) => String(s || '').split(' · ')[0];
+
+/* first three exercise names, then "and N more" */
+function templateSummary(tp) {
+  const names = (tp.items || []).map((i) => label(exById(i.exId))).filter(Boolean);
+  if (!names.length) return t('no_exercises_yet');
+  const head = names.slice(0, 3).join(', ');
+  const rest = names.length - 3;
+  return rest > 0 ? `${head} ${t('and_more', { n: rest })}` : head;
+}
+
+/* whole days between then and now, counted from local midnight, so
+   "yesterday" is yesterday whatever time you trained */
+function daysAgo(iso) {
+  const then = new Date(iso), now = new Date();
+  const a = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((b - a) / 86400000);
+}
+function whenAgo(iso) {
+  const d = daysAgo(iso);
+  return d <= 0 ? t('today') : d === 1 ? t('yesterday') : t('days_ago_short', { n: d });
+}
+function startedAgo(iso) {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 60000));
+  if (mins < 60) return t('started_ago', { n: mins });
+  return t('started_ago_hm', { h: Math.floor(mins / 60), m: mins % 60 });
+}
+function backupDue() {
+  const dsb = daysSinceBackup();
+  return (dsb === null && S.workouts.length > 2) || (dsb !== null && dsb >= 14);
 }
 
 /* Today shows only the most recently used templates; the rest open in a sheet */
@@ -519,50 +621,115 @@ function liveBlock(e, ei, si, kind, ex, prev) {
   </div>`;
 }
 
-/* ============ STATS ============ */
-function viewStats() {
-  if (!S.workouts.length) return emptyState(t('empty_stats_t'), t('empty_stats_s'));
-  const st = overallStats();
-  let html = `<section class="section"><div class="kpis">
-    ${kpi(st.count, t('workouts'))}
-    ${kpi(fmtNum(st.avg, 1), t('avg_per_week'))}
-    ${kpi(st.streak, `${t('streak')} (${t('weeks')})`)}
-    ${kpi(fmtNum(st.totalVolume / 1000, 1), t('total_volume'), 't')}
-  </div></section>
-  <section class="section">${heading(t('vol_12w'), t('tonnes'))}<div class="chartbox" id="chart-vol"></div></section>`;
+/* ============ PROGRESS ============ */
+/* Stats and Body answered one question, so they are one screen. Two numbers,
+   two charts, and one sentence under each chart. Everything else is behind the
+   four rows at the bottom. */
+const MEAS = ['waist', 'chest_m', 'arm', 'thigh', 'neck'];
+const fmtYmd = (s) => parseYmd(s).toLocaleDateString(loc(), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+const progRow = (r, text) => `<button class="listrow" data-act="tab" data-v="${r}">
+  <span class="grow">${esc(text)}</span><span class="chev" aria-hidden="true">›</span></button>`;
 
-  const split = muscleSplit(30);
-  if (split.length) {
-    const max = Math.max(1, ...split.map((s) => s.sets));
-    html += `<section class="section">${heading(t('split_30'))}<div class="list">` + split.map((s) => `
-      <div class="splitrow"><div class="row between"><span class="nm">${esc(muscleLabel(s.m))}</span>
-        <span class="ct">${s.sets} ${esc(t('sets_short'))}</span></div>${hbar(s.sets / max)}</div>`).join('') + '</div></section>';
+function viewProgress() {
+  const s = weightSeries();
+  const cur = s.length ? s[s.length - 1].v : null;
+  let html = '';
+
+  if (S.workouts.length || S.body.length) {
+    const st = overallStats();
+    html += `<div class="kpis">${kpi(st.thisWeek, t('workouts_week'))}${kpi(st.streak, t('week_streak'))}</div>`;
+  } else {
+    html += emptyState(t('empty_stats_t'), t('empty_stats_s'));
   }
 
+  if (S.workouts.length > 1) {
+    const note = volumeTrendSentence();
+    html += `<section class="section"><h2>${esc(t('volume'))}</h2>
+      <div id="chart-vol"></div>
+      ${note ? `<div class="chartnote">${esc(note)}</div>` : ''}</section>`;
+  }
+
+  if (s.length > 1) {
+    const delta = weightDeltaClause();
+    html += `<section class="section"><h2>${esc(t('body_weight'))}</h2>
+      <div id="chart-body"></div>
+      <div class="chartline"><span class="v">${esc(fmtNum(cur, 1))}</span>
+        <span class="k">${esc(t('kg_today'))}${delta ? ' · ' + esc(delta) : ''}</span></div></section>`;
+  }
+
+  html += `<div class="list mt-5">
+    ${progRow('p_exercise', t('per_exercise_row'))}
+    ${progRow('p_split', t('split_row'))}
+    ${progRow('p_weight', t('log_weight'))}
+    ${progRow('p_meas', t('measurements'))}
+  </div>`;
+  return html;
+}
+
+/* the last four weeks against the four before them */
+function volumeTrendSentence() {
+  const w = weeklyVolume(8);
+  const mean = (a) => a.reduce((s, x) => s + x.value, 0) / a.length;
+  const prev = mean(w.slice(0, 4)), last = mean(w.slice(4));
+  if (prev <= 0 || last <= 0) return '';
+  const pct = Math.round(((last - prev) / prev) * 100);
+  if (Math.abs(pct) < 5) return t('vol_steady');
+  /* a near-empty baseline makes the percentage meaningless */
+  if (pct > 200) return t('vol_up_much');
+  return pct > 0 ? t('vol_up', { n: pct }) : t('vol_down', { n: -pct });
+}
+
+/* "+1.8 since July": today against the closest entry at least 30 days back */
+function weightDeltaClause() {
+  const s = weightSeries();
+  if (s.length < 2) return '';
+  const cur = s[s.length - 1];
+  const curT = parseYmd(cur.date).getTime();
+  let base = s[0];
+  for (let i = s.length - 1; i >= 0; i--) {
+    if (curT - parseYmd(s[i].date).getTime() >= 30 * 86400000) { base = s[i]; break; }
+  }
+  const d = cur.v - base.v;
+  if (Math.abs(d) < 0.05) return '';
+  const month = parseYmd(base.date).toLocaleDateString(loc(), { month: 'long' });
+  return `${d > 0 ? '+' : ''}${fmtNum(d, 1)} ${t('since', { month })}`;
+}
+
+/* ---- Progress · per exercise ---- */
+function viewPerExercise() {
   const used = [...new Set(S.workouts.flatMap((w) => w.entries.map((e) => e.exId)))];
-  if (used.length) {
-    if (!ui.statsEx || !used.includes(ui.statsEx)) ui.statsEx = used[0];
-    html += `<section class="section">${heading(t('per_exercise'))}
-      <select data-f="statsex" aria-label="${esc(t('per_exercise'))}">` +
-      used.map((id) => `<option value="${id}" ${id === ui.statsEx ? 'selected' : ''}>${esc(label(exById(id)))}</option>`).join('') + '</select>';
-    const pr = exercisePR(ui.statsEx);
-    const ex = exById(ui.statsEx);
-    if (pr) {
-      html += `<div class="kpis mt-3">
-        ${ex.kind === 'time' ? kpi(fmtClock(pr.time), t('best_set')) : kpi(fmtNum(pr.weight, 2), t('best_set'), t('kg'))}
-        ${ex.kind === 'wr' ? kpi(fmtNum(pr.e1rm, 1), t('est_1rm'), t('kg')) : kpi(pr.reps, t('reps'))}
-      </div><div class="chartbox" id="chart-ex"></div>`;
-    }
-    html += '</section>';
+  if (!used.length) return emptyState(t('empty_stats_t'), t('empty_stats_s'));
+  if (!ui.statsEx || !used.includes(ui.statsEx)) ui.statsEx = used[0];
+  let html = `<select data-f="statsex" aria-label="${esc(t('per_exercise'))}">`
+    + used.map((id) => `<option value="${id}" ${id === ui.statsEx ? 'selected' : ''}>${esc(label(exById(id)))}</option>`).join('')
+    + '</select>';
+  const pr = exercisePR(ui.statsEx);
+  const ex = exById(ui.statsEx);
+  if (pr) {
+    html += `<div class="kpis mt-4">
+      ${ex.kind === 'time' ? kpi(fmtClock(pr.time), t('best_set')) : kpi(fmtNum(pr.weight, 2), t('best_set'), t('kg'))}
+      ${ex.kind === 'wr' ? kpi(fmtNum(pr.e1rm, 1), t('est_1rm'), t('kg')) : kpi(pr.reps, t('reps'))}
+    </div><div class="chartbox" id="chart-ex"></div>`;
+  } else {
+    html += emptyState(t('no_history_ex'), t('empty_exhist_s'));
   }
   return html;
 }
 
-/* ============ BODY ============ */
-const MEAS = ['waist', 'chest_m', 'arm', 'thigh', 'neck'];
-const fmtYmd = (s) => parseYmd(s).toLocaleDateString(loc(), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+/* ---- Progress · muscle split ---- */
+function viewMuscleSplit() {
+  const split = muscleSplit(30);
+  if (!split.length) return emptyState(t('empty_stats_t'), t('empty_stats_s'));
+  const max = Math.max(1, ...split.map((s) => s.sets));
+  return `<div class="screenmeta">${esc(t('split_30'))}</div><div class="list">` + split.map((s) => `
+    <div class="splitrow"><div class="row between"><span class="nm">${esc(muscleLabel(s.m))}</span>
+      <span class="ct">${s.sets} ${esc(t('sets_short'))}</span></div>${hbar(s.sets / max)}</div>`).join('') + '</div>';
+}
 
-function viewBody() {
+/* ---- Progress · log weight ---- */
+/* the goal bar sits directly above the input: it is context for the number
+   you are about to type, not something the overview should carry */
+function viewLogWeight() {
   const s = weightSeries();
   const cur = s.length ? s[s.length - 1].v : null;
   const avg = s.length ? rollingAvg(s, 7) : [];
@@ -572,45 +739,59 @@ function viewBody() {
   const prog = (cur != null && goal > start) ? (cur - start) / (goal - start) : 0;
   const wcCls = wc == null ? '' : (wc >= 0.15 && wc <= 0.28 ? 'ok' : (wc > 0.28 || wc < 0 ? 'warn' : ''));
 
-  let html = `<section class="section"><div class="kpis">
+  let html = `<div class="kpis">
     ${kpi(cur != null ? fmtNum(cur, 1) : NA, t('current'), cur != null ? t('kg') : '')}
     ${kpi(cur7 != null ? fmtNum(cur7, 2) : NA, t('trend7'))}
     ${kpi(wc == null ? NA : (wc >= 0 ? '+' : '') + fmtNum(wc, 2), t('weekly_change'), '', wcCls)}
     ${kpi(cur != null ? fmtNum(goal - cur, 1) : NA, t('to_go'), cur != null ? t('kg') : '')}
-  </div></section>
+  </div>
   <section class="section goalbar">
     <div class="ends"><span>${esc(t('start_w'))} ${esc(fmtNum(start, 1))}</span><span>${esc(t('goal'))} ${esc(fmtNum(goal, 1))}</span></div>
     ${hbar(prog)}
     <div class="hint">${esc(t('target_rate'))}</div>
-  </section>`;
-
-  if (s.length > 1) {
-    html += `<section class="section">${heading(t('body_weight'), t('kg'))}<div class="chartbox" id="chart-body"></div>
-      <div class="legend"><span><i class="ink"></i>${esc(t('trend7'))}</span><span><i class="l2"></i>${esc(t('body_weight'))}</span><span><i class="ok"></i>${esc(t('goal'))} ${esc(fmtNum(goal, 1))}</span></div></section>`;
-  }
-
-  html += `<section class="section">${heading(t('log_weight'))}
+  </section>
+  <section class="section">
     <div class="formgrid">
       <label class="field"><span>${esc(t('date'))}</span><input type="date" data-f="bdate" value="${ymd(new Date())}"></label>
       <label class="field"><span>${esc(t('body_weight'))}, ${esc(t('kg'))}</span><input type="text" inputmode="decimal" class="numin" data-f="bweight" placeholder="0"></label>
     </div>
-    <button class="btn quiet mt-2" data-act="toggle-meas" aria-expanded="${ui.showMeas}"><span class="pm">${ui.showMeas ? '−' : '+'}</span> ${esc(t('measurements'))}</button>
-    <div class="measgrid" id="meas"${ui.showMeas ? '' : ' hidden'}>
+    <button class="btn-primary mt-3" data-act="save-body">${esc(t('save'))}</button>
+  </section>`;
+
+  const rows = S.body.filter((b) => num(b.weight) > 0);
+  if (rows.length) {
+    html += `<section class="section">${heading(t('history_for'), rows.length)}<div class="list">`
+      + [...rows].reverse().slice(0, 40).map((b) => `<div class="listrow"><div class="grow">
+          <div class="value">${esc(fmtNum(num(b.weight), 1))} ${esc(t('kg'))}</div>
+          <div class="meta">${esc(fmtYmd(b.date))}</div></div>
+        <button class="ibtn" data-act="del-body" data-v="${b.id}" aria-label="${esc(t('delete'))}">×</button></div>`).join('')
+      + '</div></section>';
+  } else {
+    html += emptyState(t('empty_body_t'), t('empty_body_s'));
+  }
+  return html;
+}
+
+/* ---- Progress · measurements ---- */
+function viewMeasurements() {
+  const rows = S.body.filter((b) => MEAS.some((k) => b[k]));
+  let html = `<section class="section">
+    <label class="field"><span>${esc(t('date'))}</span><input type="date" data-f="bdate" value="${ymd(new Date())}"></label>
+    <div class="measgrid">
       ${MEAS.map((k) => `<label class="field"><span>${esc(t(k))}, ${esc(t('cm'))}</span><input type="text" inputmode="decimal" class="numin" data-f="b_${k}" placeholder="0"></label>`).join('')}
     </div>
     <button class="btn-primary mt-3" data-act="save-body">${esc(t('save'))}</button>
   </section>`;
 
-  if (S.body.length) {
-    html += `<section class="section">${heading(t('history_for'), S.body.length)}<div class="list">` + [...S.body].reverse().slice(0, 40).map((b) => {
-      const meas = MEAS.filter((k) => b[k]).map((k) => `${t(k)} ${b[k]}`);
-      return `<div class="listrow"><div class="grow">
-          <div class="value">${b.weight ? `${esc(fmtNum(num(b.weight), 1))} ${esc(t('kg'))}` : NA}</div>
-          <div class="meta">${esc([fmtYmd(b.date)].concat(meas).join(' · '))}</div></div>
-        <button class="ibtn" data-act="del-body" data-v="${b.id}" aria-label="${esc(t('delete'))}">×</button></div>`;
-    }).join('') + '</div></section>';
-  } else {
-    html += emptyState(t('empty_body_t'), t('empty_body_s'));
+  if (rows.length) {
+    html += `<button class="btn quiet mt-4" data-act="toggle-meas" aria-expanded="${ui.showMeas}">
+      <span class="pm">${ui.showMeas ? '−' : '+'}</span> ${esc(t('history_for'))}</button>
+      <div id="meas"${ui.showMeas ? '' : ' hidden'}><div class="list">`
+      + [...rows].reverse().slice(0, 40).map((b) => `<div class="listrow"><div class="grow">
+          <div class="value">${esc(fmtYmd(b.date))}</div>
+          <div class="meta">${esc(MEAS.filter((k) => b[k]).map((k) => `${t(k)} ${b[k]}`).join(' · '))}</div></div>
+        <button class="ibtn" data-act="del-body" data-v="${b.id}" aria-label="${esc(t('delete'))}">×</button></div>`).join('')
+      + '</div></div>';
   }
   return html;
 }
@@ -621,15 +802,15 @@ const shortDate = (d) => d.toLocaleDateString(loc(), { day: 'numeric', month: 's
 
 function drawCharts() {
   const v = document.getElementById('chart-vol');
-  if (v) barChart(v, weeklyVolume(12).map((x) => ({ label: shortDate(x.date), value: x.value })));
+  if (v) barChart(v, weeklyVolume(12).map((x) => ({ label: shortDate(x.date), value: x.value })), 96);
   const b = document.getElementById('chart-body');
   if (b) {
     const s = weightSeries();
     const avg = rollingAvg(s, 7);
     lineChart(b, [
       { points: s.map((p) => ({ x: parseYmd(p.date).getTime(), y: p.v })), color: 'var(--line2)', dots: true, width: 0 },
-      { points: avg.map((p) => ({ x: parseYmd(p.date).getTime(), y: p.v })), color: 'var(--ink)', width: 2 },
-    ], { hline: num(S.settings.goalWeight), fmt: (n) => fmtNum(n, 1) });
+      { points: avg.map((p) => ({ x: parseYmd(p.date).getTime(), y: p.v })), color: 'var(--ink2)', width: 2, last: 'var(--ink)' },
+    ], { hline: num(S.settings.goalWeight), fmt: (n) => fmtNum(n, 1), h: 88 });
   }
   const e = document.getElementById('chart-ex');
   if (e && ui.statsEx) {
@@ -642,8 +823,8 @@ function drawCharts() {
   }
 }
 
-function barChart(host, items) {
-  const W = Math.max(200, Math.round(host.clientWidth || 340)), H = 132;
+function barChart(host, items, height) {
+  const W = Math.max(200, Math.round(host.clientWidth || 340)), H = height || 132;
   const padL = 34, padB = 24, padT = 6;
   const max = Math.max(1, ...items.map((i) => i.value));
   const bw = (W - padL) / items.length;
@@ -673,7 +854,7 @@ function barChart(host, items) {
 }
 
 function lineChart(host, series, opt = {}) {
-  const W = Math.max(200, Math.round(host.clientWidth || 340)), H = 140, padB = 22, padT = 10;
+  const W = Math.max(200, Math.round(host.clientWidth || 340)), H = opt.h || 140, padB = 22, padT = 10;
   const pts = series.flatMap((s) => s.points).filter((p) => isFinite(p.y));
   if (!pts.length) { host.innerHTML = ''; return; }
   const ys = pts.map((p) => p.y);
@@ -705,6 +886,8 @@ function lineChart(host, series, opt = {}) {
       paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width}" stroke-linejoin="round" stroke-linecap="round"/>`;
     }
     if (s.dots) p.forEach((q) => { paths += `<circle cx="${px(q.x).toFixed(1)}" cy="${py(q.y).toFixed(1)}" r="${s.width ? 2.5 : 2}" fill="${s.color}"/>`; });
+    /* "now" is the brightest thing in the chart */
+    if (s.last) { const q = p[p.length - 1]; paths += `<circle cx="${px(q.x).toFixed(1)}" cy="${py(q.y).toFixed(1)}" r="3.6" fill="${s.last}"/>`; }
   });
   const mid = new Date(xMin + (xMax - xMin) / 2);
   const xl = [[padL, 'start', new Date(xMin)], [padL + (W - padL) / 2, 'middle', mid], [W, 'end', new Date(xMax)]];
@@ -1013,14 +1196,6 @@ function settingsBody() {
 
   return `
     <div class="list">
-      <button class="listrow" data-act="tab" data-v="stats">
-        <span class="grow"><span class="name">${esc(t('tab_stats'))}</span><span class="meta">${esc(t('open_stats'))}</span></span>
-        <span class="chev" aria-hidden="true">›</span></button>
-      <button class="listrow" data-act="tab" data-v="body">
-        <span class="grow"><span class="name">${esc(t('tab_body'))}</span><span class="meta">${esc(t('open_body'))}</span></span>
-        <span class="chev" aria-hidden="true">›</span></button>
-    </div>
-    <div class="list mt-5">
       <div class="prefrow"><span class="lbl">${esc(t('lang'))}</span><div class="seg">${seg('lang', 'en', lang === 'en', 'EN')}${seg('lang', 'ru', lang === 'ru', 'RU')}</div></div>
       <div class="prefrow"><span class="lbl">${esc(t('theme'))}</span><div class="seg">${seg('theme', 'dark', theme !== 'light', t('dark'))}${seg('theme', 'light', theme === 'light', t('light'))}</div></div>
     </div>
@@ -1047,6 +1222,7 @@ function settingsBody() {
       <span class="grow"><span class="name">${esc(label(e))}</span><span class="meta">${esc(muscleLabel(e.m))} · ${esc(equipLabel(e.eq))}</span></span>
       <button class="btn sm" data-act="restore-ex" data-v="${e.id}">${esc(t('restore'))}</button></div>`).join('')}</div>` : ''}
     <h2 class="mt-5">${esc(t('data'))}</h2>
+    ${backupDue() ? `<div class="note">${esc(dsb === null ? t('backup_never') : t('backup_due', { n: dsb }))}</div>` : ''}
     <div class="metaline">${esc(t('last_backup'))}: ${dsb === null ? esc(t('never')) : (dsb === 0 ? esc(t('today')) : dsb + esc(t('days_ago')))}</div>
     <button class="btn mt-3" data-act="export">${esc(t('export'))}</button>
     <button class="btn mt-2" data-act="import">${esc(t('import'))}</button>
@@ -1403,8 +1579,7 @@ function onClick(ev) {
   if (act !== 'undo-set' && act !== 'del-set' && act !== 'step') commitDelete();
 
   switch (act) {
-    /* the Workout tab goes straight back to the session while one is running */
-    case 'tab': closeAllSheets(); go(v === 'home' && S.active ? 'log' : v); break;
+    case 'tab': closeAllSheets(); go(v); break;
     case 'close-sheet': closeSheet(); break;
 
     /* home */

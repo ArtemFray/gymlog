@@ -144,9 +144,11 @@ button:disabled { opacity: .35; cursor: default; }
    header / [.progress | .toolbar] / main#app / [#restbar] / nav.
    main#app is the ONLY scroll container. nav is never position:fixed.      */
 
+/* --vh is the measured web-view height (views.js fitViewport), so the tab bar
+   sits on the bottom edge on every screen size. 100dvh is the fallback. */
 #shell {
   display: flex; flex-direction: column;
-  height: 100vh; height: 100dvh;
+  height: 100vh; height: 100dvh; height: var(--vh, 100dvh);
   position: relative; overflow: hidden;
 }
 
@@ -169,6 +171,19 @@ header h1.wordmark {
 }
 header .hslot { display: flex; align-items: center; flex: none; }
 header .hslot:empty { display: none; }
+header #hlead { display: flex; align-items: center; flex: none; }
+/* the Progress sub-views put a back chevron where the mark sits */
+header .back {
+  width: var(--tap); height: var(--tap); margin-left: -12px;
+  display: grid; place-items: center;
+  font-size: 30px; line-height: 1; color: var(--ink);
+}
+/* a late backup is a dot on the gear, not a note on Today */
+.hbtn.dot { position: relative; }
+.hbtn.dot::after {
+  content: ""; position: absolute; top: 7px; right: 7px;
+  width: 7px; height: 7px; border-radius: 50%; background: var(--warn);
+}
 
 .hbtn {
   width: var(--tap); height: var(--tap); flex: none;
@@ -198,18 +213,19 @@ nav {
   background: var(--glass); border-top: 1px solid var(--line);
   -webkit-backdrop-filter: saturate(160%) blur(22px);
   backdrop-filter: saturate(160%) blur(22px);
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  padding: 8px 6px max(10px, env(safe-area-inset-bottom));
+  /* flex, not four equal columns: "Упражнения" needs more room than "История"
+     and the floor is 16px, so the bar gives each label the width it needs */
+  display: flex; padding: 8px 8px max(10px, env(safe-area-inset-bottom));
 }
 /* set from JS (syncNavOverlap) when main#app sits directly above nav; :has() did not
    re-evaluate on iOS when a row was inserted between them */
 #shell.nav-over > main { margin-bottom: calc(-1 * var(--nav-h)); padding-bottom: calc(var(--nav-h) + var(--s-6)); }
 /* three tabs, plain 16px labels, no icons */
 nav button {
-  min-width: 0; min-height: var(--tap);
-  display: grid; place-items: center; padding: 0 2px;
+  flex: 1 1 auto; min-width: 0; min-height: var(--tap);
+  display: grid; place-items: center; padding: 0 5px;
   font: 400 var(--t-min)/1.15 var(--f-sans); color: var(--ink3);
-  text-align: center; overflow-wrap: anywhere;
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 nav button.on { color: var(--ink); font-weight: 600; }
 
@@ -233,6 +249,40 @@ button.screenmeta { min-height: var(--tap); margin-top: calc(-1 * var(--s-2)); }
 .screenmeta .grow { flex: 1; min-width: 0; }
 .screenmeta .chev { color: var(--ink3); font-size: 20px; flex: none; }
 button.screenmeta:active { color: var(--ink2); }
+
+/* ------------------------------------------------------------------ today
+   A full-height column, so the alternatives can be pushed to the bottom with
+   margin-top:auto: the recommendation sits where the eye lands, the list
+   where the thumb is. */
+
+.todaymain { display: flex; flex-direction: column; min-height: 100%; }
+.eyebrow { font: 400 var(--t-base)/1.2 var(--f-sans); color: var(--ink3); margin-bottom: 10px; }
+.eyebrow.ok { color: var(--ok); }
+.todaysub { font: 400 var(--t-base)/1.45 var(--f-sans); color: var(--ink2); margin: 10px 0 20px; }
+.todaylast {
+  display: flex; align-items: center; gap: 10px; margin-top: 14px;
+  font: 400 var(--t-base)/1.45 var(--f-sans); color: var(--ink3);
+}
+.todaylast .done { color: var(--ok); font-size: 18px; }
+.todaynote {
+  margin: 26px 0 0; padding-top: 20px; border-top: 1px solid var(--line);
+  font: 400 var(--t-base)/1.5 var(--f-sans); color: var(--ink3);
+}
+.todayalt { margin-top: auto; padding-top: var(--s-5); }
+.todayalt h2 { margin: 0; }
+.todayalt .list { margin-top: var(--s-2); }
+/* one line each: a name and a chevron. No preview, no badge, no pencil. */
+.todayalt .listrow { min-height: 56px; padding: var(--s-3) 0; font: 400 var(--t-base)/1.3 var(--f-sans); }
+
+/* --------------------------------------------------------------- progress */
+
+.chartnote { font: 400 var(--t-base)/1.45 var(--f-sans); color: var(--ink3); margin-top: var(--s-2); }
+.chartline { display: flex; align-items: baseline; gap: 10px; margin-top: var(--s-2); }
+.chartline .v { font: 600 var(--t-num)/1 var(--f-sans); letter-spacing: -.02em; }
+.chartline .k { font: 400 var(--t-base)/1.3 var(--f-sans); color: var(--ink3); }
+/* charts sit directly on the page: a border around a chart says nothing */
+#chart-vol { height: 96px; }
+#chart-body { height: 88px; }
 
 /* a heading with one control on its right */
 .h2row { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-5) 0 var(--s-3); }
