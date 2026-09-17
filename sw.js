@@ -1,5 +1,5 @@
 /* GymLog service worker — offline app shell */
-const CACHE = 'gymlog-v3.1';
+const CACHE = 'gymlog-v3.2';
 const ASSETS = [
   './', './index.html', './style.css', './data.js', './info.js', './store.js', './views.js',
   './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './icon-512-maskable.png',

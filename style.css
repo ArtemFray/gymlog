@@ -31,6 +31,7 @@
 
   --scrim: rgba(0,0,0,.6);
   --sheet-shadow: none;
+  --glass: rgba(18,17,16,.78);
 
   --f-serif: ui-serif, "New York", Georgia, serif;
   --f-sans:  -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
@@ -56,6 +57,9 @@
 
   --gutter: 18px;
   --tap: 44px;
+
+  /* border 1 + padding 4 + 44px buttons + bottom padding */
+  --nav-h: calc(49px + max(8px, env(safe-area-inset-bottom)));
 }
 
 html[data-theme="light"] {
@@ -85,6 +89,7 @@ html[data-theme="light"] {
 
   --scrim: rgba(24,22,20,.42);
   --sheet-shadow: 0 -8px 30px rgba(24,22,20,.12);
+  --glass: rgba(244,242,237,.78);
 }
 
 /* ------------------------------------------------------------------ base */
@@ -153,11 +158,17 @@ main {
   width: 100%; max-width: 680px; margin: 0 auto;
 }
 
+/* nav stays a flex row, never position:fixed. When main#app sits right above it,
+   main runs underneath, so content scrolls behind the translucent bar. */
 nav {
-  flex: none; z-index: 30;
-  background: var(--bg); border-top: 1px solid var(--line);
+  flex: none; z-index: 30; position: relative;
+  height: var(--nav-h);
+  background: var(--glass); border-top: 1px solid var(--line);
+  -webkit-backdrop-filter: saturate(160%) blur(18px);
+  backdrop-filter: saturate(160%) blur(18px);
   display: flex; padding: 4px 6px max(8px, env(safe-area-inset-bottom));
 }
+main:has(+ nav) { margin-bottom: calc(-1 * var(--nav-h)); padding-bottom: calc(var(--nav-h) + var(--s-6)); }
 nav button {
   flex: 1; min-width: 0; min-height: var(--tap);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
@@ -173,14 +184,6 @@ nav button svg {
 }
 nav button.on { color: var(--ink); }
 nav button.on svg { fill: currentColor; stroke: currentColor; }
-
-/* iOS home-screen apps with a translucent status bar size 100% and 100dvh short by
-   the top safe area, which leaves a blank band under the nav. 100lvh is the full screen. */
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  body { bottom: auto; height: 100lvh; }
-  #shell { height: 100lvh; }
-  .sheet { bottom: auto; height: 100lvh; }
-}
 
 /* session bar: flex:none row under the header while a workout runs */
 .sessionbar {
