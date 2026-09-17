@@ -68,12 +68,13 @@ function applyTheme() {
 }
 
 /* ============ icons ============ */
+/* 24px line icons. .f = body tinted when the tab is active, .dot = always solid */
 const NAV_ICON = {
-  home: '<rect x="2.2" y="2.2" width="10.6" height="10.6" rx="2.2"/>',
-  history: '<path d="M2 3.5h11M2 7.5h11M2 11.5h11"/>',
-  exercises: '<rect x="1.8" y="5.4" width="11.4" height="7.8" rx="2"/><rect x="3.9" y="1.8" width="7.2" height="2.6" rx="1"/>',
-  stats: '<rect x="1.9" y="8.6" width="2.6" height="4.6" rx=".7"/><rect x="6.2" y="5.4" width="2.6" height="7.8" rx=".7"/><rect x="10.5" y="1.9" width="2.6" height="11.3" rx=".7"/>',
-  body: '<circle cx="7.5" cy="3" r="1.9"/><path d="M7.5 6.4v7.1"/>',
+  home: '<rect class="f" x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 9.8h17M8 3v4M16 3v4"/><circle class="dot" cx="12" cy="15.1" r="1.9"/>',
+  history: '<path d="M4.3 13a7.8 7.8 0 1 0 2.2-6.6"/><path d="M4.2 3.6v3.9h3.9"/><path d="M12 8.2v4.4l3 1.8"/>',
+  exercises: '<rect class="f" x="5.2" y="6.5" width="3.3" height="11" rx="1.1"/><rect class="f" x="15.5" y="6.5" width="3.3" height="11" rx="1.1"/><rect class="f" x="2.2" y="9.2" width="3" height="5.6" rx="1"/><rect class="f" x="18.8" y="9.2" width="3" height="5.6" rx="1"/><path d="M8.5 12h7"/>',
+  stats: '<path d="M3.5 20.5h17"/><rect class="f" x="5" y="12.5" width="3.2" height="5.5" rx="1"/><rect class="f" x="10.4" y="8.5" width="3.2" height="9.5" rx="1"/><rect class="f" x="15.8" y="4" width="3.2" height="14" rx="1"/>',
+  body: '<rect class="f" x="3.5" y="3.5" width="17" height="17" rx="4.8"/><path d="M8 10.2a5.6 5.6 0 0 1 8 0"/><path d="M12 12.3l1.8-2.7"/>',
 };
 const ICON_MORE = '<svg viewBox="0 0 18 18" aria-hidden="true"><circle class="solid" cx="3.8" cy="9" r="1.5"/><circle class="solid" cx="9" cy="9" r="1.5"/><circle class="solid" cx="14.2" cy="9" r="1.5"/></svg>';
 const ICON_PLATES = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M1.5 9h15"/><rect x="4.2" y="4" width="2.8" height="10" rx=".8"/><rect x="11" y="4" width="2.8" height="10" rx=".8"/></svg>';
@@ -93,7 +94,7 @@ function renderNav() {
   $('#nav').innerHTML = TABS.map((tb) => {
     const on = route === tb.id || (route === 'log' && tb.id === 'home');
     return `<button data-act="tab" data-v="${tb.id}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>
-       <svg viewBox="0 0 15 15" aria-hidden="true">${NAV_ICON[tb.id]}</svg><span>${esc(t(tb.k))}</span></button>`;
+       <svg viewBox="0 0 24 24" aria-hidden="true">${NAV_ICON[tb.id]}</svg><span>${esc(t(tb.k))}</span></button>`;
   }).join('');
 }
 function go(r) {

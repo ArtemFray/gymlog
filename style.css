@@ -31,7 +31,7 @@
 
   --scrim: rgba(0,0,0,.6);
   --sheet-shadow: none;
-  --glass: rgba(18,17,16,.78);
+  --glass: rgba(18,17,16,.84);
 
   --f-serif: ui-serif, "New York", Georgia, serif;
   --f-sans:  -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
@@ -89,7 +89,7 @@ html[data-theme="light"] {
 
   --scrim: rgba(24,22,20,.42);
   --sheet-shadow: 0 -8px 30px rgba(24,22,20,.12);
-  --glass: rgba(244,242,237,.78);
+  --glass: rgba(244,242,237,.84);
 }
 
 /* ------------------------------------------------------------------ base */
@@ -164,8 +164,8 @@ nav {
   flex: none; z-index: 30; position: relative;
   height: var(--nav-h);
   background: var(--glass); border-top: 1px solid var(--line);
-  -webkit-backdrop-filter: saturate(160%) blur(18px);
-  backdrop-filter: saturate(160%) blur(18px);
+  -webkit-backdrop-filter: saturate(160%) blur(22px);
+  backdrop-filter: saturate(160%) blur(22px);
   display: flex; padding: 4px 6px max(8px, env(safe-area-inset-bottom));
 }
 main:has(+ nav) { margin-bottom: calc(-1 * var(--nav-h)); padding-bottom: calc(var(--nav-h) + var(--s-6)); }
@@ -178,12 +178,14 @@ nav button {
 }
 nav button span { max-width: 100%; overflow-wrap: anywhere; }
 nav button svg {
-  width: 15px; height: 15px; display: block;
-  fill: none; stroke: var(--line2); stroke-width: 1.4;
+  width: 23px; height: 23px; display: block;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
   stroke-linecap: round; stroke-linejoin: round;
 }
+nav button svg .dot { fill: currentColor; stroke: none; }
 nav button.on { color: var(--ink); }
-nav button.on svg { fill: currentColor; stroke: currentColor; }
+nav button.on svg { stroke-width: 1.9; }
+nav button.on svg .f { fill: currentColor; fill-opacity: .18; }
 
 /* session bar: flex:none row under the header while a workout runs */
 .sessionbar {
