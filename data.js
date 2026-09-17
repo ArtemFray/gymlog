@@ -447,6 +447,7 @@ const I18N = {
     plates_left: 'Not exact with your plates: {n} kg left over',
     version: 'GymLog · v3 · data stays on this device',
     date: 'Date',
+    all_templates: 'All templates', tpl_one: '{n} template', tpl_many: '{n} templates',
     sess_one: '{n} session', sess_many: '{n} sessions', exn_one: '{n} exercise', exn_many: '{n} exercises',
   },
   ru: {
@@ -523,6 +524,7 @@ const I18N = {
     plates_left: 'Не набирается точно: остаётся {n} кг',
     version: 'GymLog · v3 · данные хранятся только на этом устройстве',
     date: 'Дата',
+    all_templates: 'Все шаблоны', tpl_one: '{n} шаблон', tpl_few: '{n} шаблона', tpl_many: '{n} шаблонов',
     sess_one: '{n} тренировка', sess_few: '{n} тренировки', sess_many: '{n} тренировок', exn_one: '{n} упражнение', exn_few: '{n} упражнения', exn_many: '{n} упражнений',
   },
 };

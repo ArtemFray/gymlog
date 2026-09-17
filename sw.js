@@ -1,7 +1,7 @@
 /* GymLog service worker: offline app shell.
    Network first, revalidating past the HTTP cache, so a deploy shows on the next open.
    The cache answers when offline, or when the network is slower than NET_TIMEOUT. */
-const CACHE = 'gymlog-v3.6';
+const CACHE = 'gymlog-v3.7';
 const NET_TIMEOUT = 2500;
 const ASSETS = [
   './', './index.html', './style.css', './data.js', './info.js', './store.js', './views.js',

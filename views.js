@@ -243,7 +243,16 @@ function viewHome() {
       <div class="eyebrow-rule"><span class="eyebrow">${esc(t('start_from'))}</span><span class="fill"></span>
         <button class="btn sm quiet" data-act="new-tpl">+ ${esc(t('new'))}</button></div>`;
     if (!S.templates.length) html += emptyState(t('empty_tpl_t'), t('empty_tpl_s'), 'left');
-    else html += `<div class="list">${S.templates.map(tplRow).join('')}</div>`;
+    else {
+      const ordered = orderedTemplates();
+      html += `<div class="list">${ordered.slice(0, HOME_TPL).map(tplRow).join('')}`;
+      if (ordered.length > HOME_TPL) {
+        html += `<button class="listrow" data-act="all-tpl">
+          <span class="grow"><span class="name">${esc(t('all_templates'))}</span><span class="meta">${esc(tn('tpl', ordered.length))}</span></span>
+          <span class="chev" aria-hidden="true">›</span></button>`;
+      }
+      html += '</div>';
+    }
     html += `<button class="btn mt-3" data-act="start-empty">${esc(t('start_empty'))}</button></section>`;
   }
 
@@ -263,13 +272,37 @@ function viewHome() {
   return html;
 }
 
+/* Today shows only the most recently used templates; the rest open in a sheet */
+const HOME_TPL = 3;
+function templateLastUsed() {
+  const last = {};
+  S.workouts.forEach((w) => { if (w.templateId && (!last[w.templateId] || w.startedAt > last[w.templateId])) last[w.templateId] = w.startedAt; });
+  return last;
+}
+function orderedTemplates() {
+  const last = templateLastUsed();
+  return S.templates.map((tp, i) => ({ tp, i, at: last[tp.id] || '' }))
+    .sort((a, b) => (a.at === b.at ? a.i - b.i : (b.at > a.at ? 1 : -1)))
+    .map((x) => x.tp);
+}
+function openTemplates() {
+  const rows = orderedTemplates().map(tplRow).join('');
+  const el = sheet(t('templates'), `<div class="list">${rows}</div>
+    <button class="btn mt-3" data-act="new-tpl">+ ${esc(t('new_template'))}</button>`);
+  el.dataset.sheet = 'templates';
+}
+
 function tplRow(tp) {
   const items = tp.items || [];
   const names = items.map((i) => label(exById(i.exId))).slice(0, 3).join(' · ') + (items.length > 3 ? ' …' : '');
+  const at = templateLastUsed()[tp.id];
+  const meta = [tn('exn', items.length)];
+  if (tp.seeded) meta.push(t('program_note'));
+  if (at) meta.push(new Date(at).toLocaleDateString(loc(), { day: 'numeric', month: 'short' }));
   return `<div class="listrow tight">
     <button class="rowbtn" data-act="start-tpl" data-v="${tp.id}">
       <span class="grow"><span class="name">${esc(label(tp) || tp.name)}</span>
-        <span class="meta">${esc(tn('exn', items.length))}${tp.seeded ? ' · ' + esc(t('program_note')) : ''}</span>
+        <span class="meta">${esc(meta.join(' · '))}</span>
         ${names ? `<span class="sub">${esc(names)}</span>` : ''}</span></button>
     <button class="ibtn" data-act="edit-tpl" data-v="${tp.id}" aria-label="${esc(t('edit_template'))}">${ICON_EDIT}</button>
   </div>`;
@@ -1334,7 +1367,8 @@ function onClick(ev) {
 
     /* home */
     case 'start-empty': startWorkout(null); ui.curEntry = null; go('log'); break;
-    case 'start-tpl': startWorkout(v); ui.curEntry = null; go('log'); break;
+    case 'start-tpl': closeAllSheets(); startWorkout(v); ui.curEntry = null; go('log'); break;
+    case 'all-tpl': openTemplates(); break;
     case 'resume': go('log'); break;
 
     /* workout editing */
