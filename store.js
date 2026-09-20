@@ -193,12 +193,10 @@ function startWorkout(templateId) {
   if (templateId) {
     const tpl = S.templates.find((x) => x.id === templateId);
     w = newWorkout(label(tpl) || tpl.name, templateId);
+    /* sets hold what you logged; the plan lives in target */
     (tpl.items || []).forEach((it) => {
-      const n = Math.max(1, Math.min(10, it.sets || 3));
-      const sets = [];
-      for (let i = 0; i < n; i++) sets.push({ w: '', r: '', done: false });
       const note = (S.settings.lang === 'ru' && it.note_ru) || it.note || '';
-      w.entries.push({ exId: it.exId, note, target: { sets: it.sets, lo: it.lo, hi: it.hi }, sets });
+      w.entries.push({ exId: it.exId, note, target: { sets: it.sets, lo: it.lo, hi: it.hi }, sets: [] });
     });
   } else {
     w = newWorkout('');
@@ -222,9 +220,10 @@ function deleteWorkout(id) {
   if (i >= 0) { S.workouts.splice(i, 1); save(); }
 }
 
+/* logged sets only: an untouched set is a plan, not a set */
 function activeSetCount() {
   if (!S.active) return 0;
-  return S.active.entries.reduce((n, e) => n + e.sets.length, 0);
+  return S.active.entries.reduce((n, e) => n + e.sets.filter((x) => x.done).length, 0);
 }
 
 /* last performance of an exercise, excluding a given workout id */

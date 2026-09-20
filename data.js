@@ -466,6 +466,13 @@ const I18N = {
     per_exercise_row: 'Per exercise', split_row: 'Muscle split', kg_today: 'kg today', since: 'since {month}',
     vol_up: 'Up {n}% on the four weeks before', vol_down: 'Down {n}% on the four weeks before',
     vol_steady: 'Steady over the last eight weeks', vol_up_much: 'Well up on the four weeks before', back: 'Back',
+    /* v6: logger rebuild */
+    add_weight: 'Add weight', t_start: 'Start', t_pause: 'Pause', t_resume: 'Resume', t_log: 'Log',
+    last_time: 'Last time', filter: 'Filter', clear: 'Clear',
+    shown_one: 'Show {n} exercise', shown_many: 'Show {n} exercises',
+    reopen_workout: 'Reopen workout', discard_n: 'Discard this workout? {n} logged sets are lost.',
+    no_sets_logged: 'Log at least one set first.', workout: 'Workout',
+    edit_set_title: 'Set {n}', remove_exercise: 'Remove exercise',
   },
   ru: {
     app: 'FREILIFT',
@@ -560,5 +567,12 @@ const I18N = {
     per_exercise_row: 'По упражнению', split_row: 'По группам мышц', kg_today: 'кг сегодня', since: 'с {month}',
     vol_up: 'Рост {n}% к предыдущим четырём неделям', vol_down: 'Снижение {n}% к предыдущим четырём неделям',
     vol_steady: 'Без изменений за последние восемь недель', vol_up_much: 'Заметно выше, чем четыре недели назад', back: 'Назад',
+    /* v6: logger rebuild */
+    add_weight: 'Добавить вес', t_start: 'Старт', t_pause: 'Пауза', t_resume: 'Дальше', t_log: 'Записать',
+    last_time: 'Прошлый раз', filter: 'Фильтр', clear: 'Сбросить',
+    shown_one: 'Показать {n} упражнение', shown_few: 'Показать {n} упражнения', shown_many: 'Показать {n} упражнений',
+    reopen_workout: 'Вернуться к тренировке', discard_n: 'Удалить тренировку? Потеряется подходов: {n}.',
+    no_sets_logged: 'Сначала запишите хотя бы один подход.', workout: 'Тренировка',
+    edit_set_title: 'Подход {n}', remove_exercise: 'Убрать упражнение',
   },
 };

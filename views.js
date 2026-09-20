@@ -4,25 +4,20 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let route = 'home';
-let ui = { exFilter: 'all', exSearch: '', statsEx: null, showMeas: false, histOpen: null, curEntry: null };
-let rest = { endsAt: 0, iv: null, total: 0 };
+let ui = { exFilter: { m: 'all', eq: 'all' }, exSearch: '', statsEx: null, showMeas: false,
+  openEntry: 0, editSet: null, editOrig: null, addW: null };
 let audioCtx = null;
-let clockIv = null;
+let tickIv = null;
 let resizeT = null;
 
-/* transient, never persisted: pending soft delete, stepper hold, row gesture */
+/* transient, never persisted: pending soft delete, stepper hold */
 let pendingDelete = null;
 let hold = null;
-let gest = null;
-let suppressClickUntil = 0;
 
 const NA = '–';
-const SWIPE_MIN = 64;
-const LONG_MS = 500;
 
 const loc = () => (S.settings.lang === 'ru' ? 'ru-RU' : 'en-GB');
 const fmtInt = (n) => String(Math.round(n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е');
 const hasVal = (v) => v !== '' && v != null;
 /* count + noun with the right plural form (RU has three) */
 function tn(base, n) {
@@ -39,23 +34,23 @@ document.addEventListener('DOMContentLoaded', () => {
   load();
   applyTheme();
   if (S.active) route = 'log';
+  else if (S.pendingFinish) route = 'finish';
   render();
   $('#btn-settings').addEventListener('click', openSettings);
-  document.addEventListener('click', (ev) => {
-    if (Date.now() < suppressClickUntil) { ev.preventDefault(); ev.stopPropagation(); }
-  }, true);
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
   document.addEventListener('change', onInput);
   document.addEventListener('focusin', onFocusIn);
-  document.addEventListener('pointerdown', onPointerDown);
-  document.addEventListener('pointermove', onPointerMove);
-  document.addEventListener('pointerup', onPointerEnd);
-  document.addEventListener('pointercancel', onPointerEnd);
-  document.addEventListener('contextmenu', (ev) => {
-    if (ev.target.closest('.setline, .setlive .head, .stepper')) ev.preventDefault();
+  /* the steppers are the only pointer gesture left: press and hold to repeat */
+  document.addEventListener('pointerdown', (ev) => {
+    const b = ev.target.closest('[data-act="step"]');
+    if (b) startHold(ev, b);
   });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else tickClock(); });
+  document.addEventListener('pointerup', stopHold);
+  document.addEventListener('pointercancel', stopHold);
+  document.addEventListener('contextmenu', (ev) => { if (ev.target.closest('.stepper')) ev.preventDefault(); });
+  /* a backgrounded PWA suspends timers: repaint from the clock on return */
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopHold(); else paintTimers(); });
   fitViewport();
   window.addEventListener('resize', () => { fitViewport(); clearTimeout(resizeT); resizeT = setTimeout(drawCharts, 150); });
   window.addEventListener('orientationchange', () => setTimeout(fitViewport, 120));
@@ -108,7 +103,11 @@ function renderNav() {
   const cur = NAV_OF[route] || route;
   $('#nav').innerHTML = TABS.map((tb) => {
     const on = cur === tb.id;
-    return `<button data-act="tab" data-v="${tb.id}" class="${on ? 'on' : ''}"${on ? ' aria-current="page"' : ''}>${esc(t(tb.k))}</button>`;
+    /* a running session renames the first tab and marks it, so the workout is
+       always one tap away and you can always see that one is open */
+    const live = tb.id === 'home' && !!S.active;
+    const cls = [on ? 'on' : '', live ? 'livedot' : ''].filter(Boolean).join(' ');
+    return `<button data-act="tab" data-v="${tb.id}" class="${cls}"${on ? ' aria-current="page"' : ''}>${esc(live ? t('tab_workout') : t(tb.k))}</button>`;
   }).join('');
 }
 function go(r) {
@@ -121,9 +120,10 @@ function go(r) {
 /* ============ render ============ */
 function render() {
   route = resolveRoute(route);
-  if (route === 'log' && !S.active) route = 'home';
+  if (route === 'log' && !S.active) route = S.pendingFinish ? 'finish' : 'home';
+  if (route === 'finish' && !S.pendingFinish) route = 'home';
   document.documentElement.lang = S.settings.lang === 'ru' ? 'ru' : 'en';
-  const titles = { history: 'tab_history', exercises: 'tab_exercises', progress: 'tab_progress' };
+  const titles = { history: 'tab_history', exercises: 'tab_exercises', progress: 'tab_progress', finish: 'finish' };
   const h1 = $('#title');
   h1.classList.toggle('wordmark', route === 'home');
   h1.textContent = route === 'home' ? 'FREILIFT'
@@ -133,38 +133,60 @@ function render() {
   renderChrome();
   const v = {
     home: viewHome, log: viewLog, history: viewHistory, exercises: viewExercises, progress: viewProgress,
+    finish: viewFinish,
     p_exercise: viewPerExercise, p_split: viewMuscleSplit, p_weight: viewLogWeight, p_meas: viewMeasurements,
   }[route] || viewHome;
   $('#app').innerHTML = v();
   renderNav();
   renderRestBar();
   drawCharts();
-  tickClock();
+  syncTicker();
+  paintTimers();
 }
 
-/* ---- session clock ----
-   The only thing on screen that has to keep moving while nothing is tapped,
-   so it patches its own element once a second and never calls render(). */
+/* ---- clocks ----
+   The session clock, the rest countdown and the cardio clock all keep moving
+   while nothing is tapped. ONE ticker patches their text four times a second
+   and never calls render(): a render would blow away an open keyboard, the
+   caret, and a stepper being held. Every value is derived from Date.now(),
+   never accumulated, because iOS suspends timers in a backgrounded PWA. */
 function elapsedStr(iso) {
   const sec = Math.max(0, (Date.now() - new Date(iso)) / 1000);
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
   const p2 = (n) => String(n).padStart(2, '0');
   return h ? `${h}:${p2(m)}:${p2(s)}` : `${m}:${p2(s)}`;
 }
-function tickClock() {
+function syncTicker() {
+  const need = !!(S.active && !S.active.editing) || restRemaining() > 0;
+  if (need && !tickIv) tickIv = setInterval(paintTimers, 250);
+  if (!need && tickIv) { clearInterval(tickIv); tickIv = null; }
+}
+function paintTimers() {
   const el = $('#elapsed');
-  if (!el) return;
-  /* editing an old workout would count from the day it happened */
-  if (S.active && !S.active.editing) {
-    el.textContent = elapsedStr(S.active.startedAt);
-    el.hidden = false;
-    el.setAttribute('aria-label', t('duration'));
-    if (!clockIv) clockIv = setInterval(tickClock, 1000);
-  } else {
-    el.hidden = true;
-    el.textContent = '';
-    if (clockIv) { clearInterval(clockIv); clockIv = null; }
+  if (el) {
+    /* editing an old workout would count from the day it happened */
+    if (S.active && !S.active.editing) {
+      el.textContent = elapsedStr(S.active.startedAt);
+      el.hidden = false;
+      el.setAttribute('aria-label', t('duration'));
+    } else { el.hidden = true; el.textContent = ''; }
   }
+  const rb = document.querySelector('#restbar .t');
+  if (rb) {
+    const left = restRemaining();
+    rb.textContent = fmtClock(left);
+    if (left <= 0) endRest(true);
+  }
+  document.querySelectorAll('[id^="clock-"]').forEach((c) => {
+    const ei = +c.id.slice(6);
+    const tm = timerFor(ei);
+    if (!tm || !tm.startedAt) return;
+    const secs = timerElapsed(tm);
+    c.textContent = fmtClock(secs);
+    const btn = document.querySelector(`[data-act="log-time"][data-v="${ei}"]`);
+    if (btn) { btn.textContent = `${t('t_log')} ${fmtClock(secs)}`; btn.disabled = !secs; }
+  });
+  syncTicker();
 }
 
 /* header action slot + the flex:none rows around main#app */
@@ -214,17 +236,25 @@ function syncNavOverlap() {
 
 function sessionProgress() {
   let done = 0, total = 0;
-  (S.active ? S.active.entries : []).forEach((e) => e.sets.forEach((st) => { total++; if (st.done) done++; }));
+  (S.active ? S.active.entries : []).forEach((e) => {
+    const d = e.sets.filter((x) => x.done).length;
+    done += d;
+    total += Math.max(d, (e.target && e.target.sets) || 0, 1);
+  });
   return { done, total };
 }
 
 /* search plus one group button. The chip row above the list is gone: it was a
    second scrolling axis over a scrolling list. */
 function toolbarHtml() {
-  const cur = ui.exFilter === 'all' ? t('all') : muscleLabel(ui.exFilter);
+  const on = filterOn();
   return `<label class="search">${ICON_SEARCH}
       <input type="text" data-f="exsearch" value="${esc(ui.exSearch)}" placeholder="${esc(t('search_ex'))}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"></label>
-    <button class="btn sm" data-act="ex-groups">${esc(cur)}</button>`;
+    <div class="filterrow">
+      <button class="filterpill${on ? ' on' : ''}" data-act="ex-groups">${esc(filterPillLabel())}</button>
+      ${on ? `<button class="filterclear" data-act="exfilter" data-v="all" aria-label="${esc(t('clear'))}">×</button>
+        <span class="filtercount">${filteredExercises().length}</span>` : ''}
+    </div>`;
 }
 
 /* ============ shared pieces ============ */
@@ -248,11 +278,37 @@ const muscleLabel = (id) => label(MUSCLES.find((m) => m.id === id) || { en: id, 
 const equipLabel = (id) => label(EQUIPMENT.find((q) => q.id === id) || {});
 const EQ_SHORT = { barbell: 'bb', dumbbell: 'db', bodyweight: 'bw' };
 
+/* Fold case and accents, and Cyrillic ё to е, so "жё" and "же" are one word
+   and "Bänke" matches "banke". */
+function fold(str) {
+  return String(str || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/ё/g, 'е')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+/* name, muscle, equipment and aliases, all searchable */
+function exHaystack(e) {
+  const m = MUSCLES.find((x) => x.id === e.m) || {};
+  const q = EQUIPMENT.find((x) => x.id === e.eq) || {};
+  return fold([e.en, e.ru, m.en, m.ru, q.en, q.ru, EQ_SHORT[e.eq] || '', (e.alias || []).join(' ')].join(' '));
+}
+/* every token must start a word: that is what makes "inc db" find
+   Incline Dumbbell Press while staying predictable */
 function exMatches(e, q) {
-  if (!q) return true;
-  const eq = EQUIPMENT.find((x) => x.id === e.eq) || {};
-  const hay = norm([e.en, e.ru, (e.alias || []).join(' '), eq.en, eq.ru, EQ_SHORT[e.eq] || ''].join(' '));
-  return norm(q).split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok));
+  const tokens = fold(q).split(' ').filter(Boolean);
+  if (!tokens.length) return true;
+  const hay = ' ' + exHaystack(e) + ' ';
+  return tokens.every((tk) => hay.indexOf(' ' + tk) !== -1);
+}
+function searchSort(list, q) {
+  const needle = fold(q).split(' ').filter(Boolean).join(' ');
+  if (!needle) return list;
+  return list.slice().sort((a, b) => {
+    const ap = fold(label(a)).indexOf(needle) === 0 ? 0 : 1;
+    const bp = fold(label(b)).indexOf(needle) === 0 ? 0 : 1;
+    return ap - bp || label(a).localeCompare(label(b));
+  });
 }
 
 /* one set as plain text: history, exercise detail */
@@ -439,10 +495,34 @@ function viewHistory() {
 }
 
 /* ============ EXERCISES ============ */
+/* ui.exFilter is { m, eq }. A build before this one persisted a bare string,
+   which must not crash the view. */
+function normalizeFilter(f) {
+  if (!f || typeof f === 'string') return { m: (f && f !== 'all') ? f : 'all', eq: 'all' };
+  return { m: f.m || 'all', eq: f.eq || 'all' };
+}
+function filterExercises(list) {
+  const f = normalizeFilter(ui.exFilter);
+  if (f.m !== 'all') list = list.filter((e) => e.m === f.m);
+  if (f.eq !== 'all') list = list.filter((e) => e.eq === f.eq);
+  return list;
+}
+function filteredExercises() {
+  let list = filterExercises(allExercises());
+  if (ui.exSearch) list = searchSort(list.filter((e) => exMatches(e, ui.exSearch)), ui.exSearch);
+  return list;
+}
+function filterPillLabel() {
+  const f = normalizeFilter(ui.exFilter);
+  const parts = [];
+  if (f.m !== 'all') parts.push(muscleLabel(f.m));
+  if (f.eq !== 'all') parts.push(equipLabel(f.eq));
+  return parts.length ? parts.join(' · ') : t('filter');
+}
+const filterOn = () => { const f = normalizeFilter(ui.exFilter); return f.m !== 'all' || f.eq !== 'all'; };
+
 function viewExercises() {
-  let list = allExercises();
-  if (ui.exFilter !== 'all') list = list.filter((e) => e.m === ui.exFilter);
-  if (ui.exSearch) list = list.filter((e) => exMatches(e, ui.exSearch));
+  const list = filteredExercises();
   if (!list.length) return emptyState(t('empty_ex_t'), t('empty_ex_s'));
 
   const groups = {};
@@ -451,8 +531,9 @@ function viewExercises() {
   Object.keys(groups).forEach((k) => { if (!order.includes(k)) order.push(k); });
 
   sessCounts = sessionCounts();
+  /* search results keep their ranking; browsing stays alphabetical */
   return order.map((mid) => {
-    const rows = groups[mid].sort((a, b) => label(a).localeCompare(label(b))).map(exRow).join('');
+    const rows = (ui.exSearch ? groups[mid] : groups[mid].sort((a, b) => label(a).localeCompare(label(b)))).map(exRow).join('');
     return `<section class="section">${heading(muscleLabel(mid), groups[mid].length)}<div class="list">${rows}</div></section>`;
   }).join('');
 }
@@ -477,70 +558,124 @@ function exRow(e) {
 }
 
 /* ============ ACTIVE WORKOUT ============ */
-/* The live set is derived: the first set with done !== true in the current entry.
-   The current entry is the one the user focused, else the first with an unlogged set. */
-const liveSetIndex = (entry) => entry.sets.findIndex((x) => !x.done);
+/* A workout is a list of exercises you move around in freely, not a queue.
+   Every exercise is on screen as one line, exactly one is open, and nothing
+   is ever finished for you: the session ends on Finish and never before. */
 
-/* An explicit pick wins; otherwise the first exercise with an unlogged set.
-   Logging the last set of an exercise clears the pick, so the screen advances. */
-function currentEntryIndex(w) {
-  const c = ui.curEntry;
-  if (c != null && w.entries[c]) return c;
-  return w.entries.findIndex((e) => liveSetIndex(e) >= 0);
+const doneSets = (e) => e.sets.filter((x) => x.done);
+/* the set being worked on: the first unlogged one */
+const liveSetIndex = (e) => { const i = e.sets.findIndex((x) => !x.done); return i < 0 ? e.sets.length : i; };
+
+/* an open card always has one unlogged set to work on */
+function ensureLive(e) {
+  if (e.sets.some((x) => !x.done)) return false;
+  e.sets.push({ w: '', r: '', done: false });
+  return true;
+}
+/* nothing about which card is open survives a session */
+function resetLogUi() { ui.openEntry = 0; ui.editSet = null; ui.editOrig = null; ui.addW = null; }
+
+/* what the rest bar says while it counts down */
+function restContext(entry, st, kind) {
+  return { name: label(exById(entry.exId)), last: setValsHtml(st, kind).replace(/<[^>]+>/g, '') };
 }
 
-/* One screen, one job: the exercise being worked on, and nothing else.
-   Session totals, the clock, the target line and the note live one tap away. */
+/* a finished workout keeps only the sets you actually logged */
+function commitWorkout(w) {
+  w.editing = false;
+  w.endedAt = w.endedAt || new Date().toISOString();
+  delete w.rest; delete w.timers;
+  w.entries.forEach((e) => { e.sets = e.sets.filter((x) => x.done); });
+  w.entries = w.entries.filter((e) => e.sets.length);
+  if (!S.workouts.some((x) => x.id === w.id)) S.workouts.unshift(w);
+  S.workouts.sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+  S.active = null;
+  save();
+}
+
+function openEntryIndex(w) {
+  if (ui.openEntry != null && w.entries[ui.openEntry]) return ui.openEntry;
+  return w.entries.length ? 0 : -1;
+}
+
 function viewLog() {
   const w = S.active;
-  if (!w.entries.length) {
-    return emptyState(t('empty_log_t'), t('empty_log_s'))
-      + `<button class="btn-primary" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`;
-  }
-  const cur = currentEntryIndex(w);
-  if (cur < 0) return doneBlock();
-  if (rest.endsAt) return restPanel(w, cur);
-  return entryBlock(w.entries[cur], cur, w);
+  const open = openEntryIndex(w);
+  /* an exercise level with the furthest-along one has been done this round */
+  const maxSets = w.entries.reduce((m, e) => Math.max(m, doneSets(e).length), 0);
+  let html = '<div class="wlist">';
+  w.entries.forEach((e, ei) => { html += (ei === open) ? openCard(e, ei) : collapsedRow(e, ei, maxSets); });
+  if (!w.entries.length) html += `<div class="empty left"><div class="s">${esc(t('empty_log_s'))}</div></div>`;
+  html += `<button class="wrow act" data-act="pick-ex">
+      <span class="grow">${esc(t('add_exercise'))}</span><span class="plus" aria-hidden="true">+</span></button>
+    <button class="wrow quiet" data-act="finish">
+      <span class="grow">${esc(t('finish_workout'))}</span><span class="chev" aria-hidden="true">›</span></button>
+  </div>`;
+  return html;
 }
 
-/* every set logged: the one thing left to do is finish */
-function doneBlock() {
-  const c = sessionProgress();
-  return `<div class="screenmeta">${esc(t('sets_of', { n: c.done, m: c.total }))}</div>
-    <div class="exname">${esc(t('all_done_t'))}</div>
-    <div class="metaline">${esc(t('all_done_s'))}</div>
-    <button class="btn-primary mt-5" data-act="finish">${esc(t('finish_workout'))}</button>
-    <button class="btn quiet mt-3" data-act="jump">${esc(t('switch_ex'))}</button>
-    <button class="btn quiet mt-2" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`;
+/* one line: name, what you last did on it, caret */
+function collapsedRow(e, ei, maxSets) {
+  const ex = exById(e.exId);
+  const ds = doneSets(e);
+  let sum = '', ok = false;
+  if (ds.length) {
+    sum = `${ds.length} × ${summaryStr(ds[ds.length - 1], ex.kind || 'wr')}`;
+    ok = maxSets > 0 && ds.length >= maxSets;
+  } else if (e.target && e.target.sets) sum = targetStr(e.target);
+  return `<button class="wrow ex" data-act="open-entry" data-v="${ei}">
+    <span class="name">${esc(label(ex))}</span>
+    ${sum ? `<span class="sum${ok ? ' ok' : ''}">${esc(sum)}</span>` : ''}
+    <span class="caret" aria-hidden="true">⌄</span></button>`;
+}
+/* the number that tells you where you are: weight, reps or a clock */
+function summaryStr(st, kind) {
+  if (kind === 'time') return fmtClock(num(st.s));
+  if (kind === 'reps') return `${num(st.r)} ${t('unit_reps')}`;
+  return `${fmtNum(num(st.w), 2)} ${t('kg')}`;
+}
+function targetStr(tg) {
+  if (!tg || !tg.sets) return '';
+  return tg.lo ? `${tg.sets} × ${tg.lo}–${tg.hi}` : `${tg.sets} ${t('sets_short')}`;
 }
 
-function entryBlock(e, ei, w) {
+/* the only raised surface on the screen */
+function openCard(e, ei) {
   const ex = exById(e.exId);
   const kind = ex.kind || 'wr';
-  const prev = lastPerformance(e.exId, w.id);
-  const live = liveSetIndex(e);
-
-  let html = `<button class="screenmeta" data-act="jump">
-      <span class="grow">${esc(t('ex_of', { n: ei + 1, m: w.entries.length }))}</span>
-      <span class="chev" aria-hidden="true">›</span></button>
-    <article class="exblock" data-entry="${ei}">
-      <div class="exname">${esc(label(ex))}</div>`;
+  if (ensureLive(e)) save();
+  let html = `<div class="excard" data-entry="${ei}">
+    <div class="exhead">
+      <div class="exname">${esc(label(ex))}</div>
+      ${(S.settings.plateCalc && ex.eq === 'barbell') ? `<button class="cardbtn" data-act="plates" data-v="${ei}" aria-label="${esc(t('plate_calc'))}">${ICON_PLATES}</button>` : ''}
+      <button class="cardbtn" data-act="ex-menu" data-v="${ei}" aria-label="${esc(t('exercise_options'))}">${ICON_MORE}</button>
+    </div>`;
   if (S.settings.programWarnings && ex.warn) html += `<div class="note">${esc(t(ex.warn === 'back' ? 'warn_back' : 'warn_shoulder'))}</div>`;
-  /* the coaching note is one tap away in the exercise menu, not always on screen */
-  if (live >= 0) html += liveBlock(e, ei, live, kind, ex, prev);
 
+  /* every logged set is a button: tap it to edit in place */
   const pd = pendingDelete && pendingDelete.entryRef === e ? pendingDelete : null;
-  html += '<div class="ledger">';
+  let n = 0;
   e.sets.forEach((st, si) => {
     if (pd && pd.si === si) html += undoStrip(pd, ei);
-    if (si !== live) html += setLine(st, ei, si, kind);
+    if (!st.done) return;
+    n++;
+    const editing = ui.editSet && ui.editSet.e === ei && ui.editSet.s === si;
+    html += editing ? editBlock(e, ei, si, kind, n) : loggedLine(st, ei, si, kind, n);
   });
   if (pd && pd.si >= e.sets.length) html += undoStrip(pd, ei);
-  html += '</div>';
 
+  /* one editor at a time: the live set hides while a logged set is open */
+  if (!ui.editSet) html += (kind === 'time') ? timerBlock(e, ei) : liveBlock(e, ei, kind);
   if (S.settings.progressionHints && hitTopOfRange(e)) html += `<div class="note ok">${esc(t('progression_hit'))}</div>`;
-  html += `<button class="btn quiet addset" data-act="add-set" data-v="${ei}">+ ${esc(t('add_set'))}</button></article>`;
-  return html;
+  return html + '</div>';
+}
+
+function loggedLine(st, ei, si, kind, n) {
+  return `<button class="setline${st.warm ? ' warm' : ''}" data-act="edit-set" data-e="${ei}" data-s="${si}">
+    <span class="done" aria-hidden="true">✓</span>
+    <span class="vals">${setValsHtml(st, kind)}</span>
+    <span class="idx">${esc(t('set_n', { n }))}${st.warm ? ' · ' + esc(t('warmup')) : ''}</span>
+  </button>`;
 }
 
 /* one 17px line: "22.5 kg × 10". The unit is spelled out, once. */
@@ -552,35 +687,94 @@ function setValsHtml(st, kind) {
   return `${hasVal(st.w) ? esc(fmtNum(num(st.w), 2)) : NA} ${esc(t('kg'))} × ${r}`;
 }
 
-function setLine(st, ei, si, kind) {
-  const cls = ['setline', st.warm ? 'warm' : '', st.done ? '' : 'pending'].filter(Boolean).join(' ');
-  const idx = t('set_n', { n: si + 1 }) + (st.warm ? ' · ' + t('warmup') : '');
-  return `<div class="${cls}" data-e="${ei}" data-s="${si}">
-    <span class="vals">${setValsHtml(st, kind)}</span>
-    <span class="idx">${esc(idx)}</span>
-    <span class="done" aria-hidden="true">${st.done ? '✓' : ''}</span>
+/* ---- the live set: weight × reps, or reps only ---- */
+function liveBlock(e, ei, kind) {
+  const si = liveSetIndex(e);
+  const st = e.sets[si];
+  const prev = lastPerformance(e.exId, S.active.id);
+  const pf = prefillFor(e, si, prev);
+  const val = (f) => (hasVal(st[f]) ? st[f] : (pf[f] != null ? pf[f] : ''));
+  const n = doneSets(e).length + 1;
+  let rows;
+  if (kind === 'reps') {
+    rows = steprow(t('reps'), ei, si, 'r', val('r'), 'numeric');
+    /* most bodyweight sets carry no extra weight and should not stare at an empty field */
+    rows += (hasVal(val('w')) || ui.addW === ei)
+      ? steprow(`+${t('kg')}`, ei, si, 'w', val('w'), 'decimal')
+      : `<button class="addw" data-act="add-weight" data-v="${ei}">+ ${esc(t('add_weight'))}</button>`;
+  } else {
+    rows = steprow(t('weight'), ei, si, 'w', val('w'), 'decimal') + steprow(t('reps'), ei, si, 'r', val('r'), 'numeric');
+  }
+  /* the plan only counts while you are still inside it */
+  const head = (e.target && e.target.sets && n <= e.target.sets) ? t('set_of', { n, m: e.target.sets }) : t('set_n', { n });
+  const last = lastStr(prev, kind);
+  return `<div class="live">
+    <div class="livehead"><span class="n">${esc(head)}</span>${last ? `<span class="prev">${esc(t('last'))} ${esc(last)}</span>` : ''}</div>
+    ${rows}
+    <button class="btn-primary" data-act="tick" data-e="${ei}" data-s="${si}">${esc(t('log_set', { n }))}</button>
   </div>`;
 }
 
-/* rest owns the whole screen: at arm's length, nobody is touching the phone */
-function restPanel(w, cur) {
-  const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
-  const nx = upNextName(w, cur);
-  return `<div class="rest" role="timer">
-    <div class="lbl">${esc(t('rest'))}</div>
-    <div class="t">${esc(fmtClock(left))}</div>
-    <div class="row">
-      <button class="add" data-act="rest-add">${esc(t('add30'))}</button>
-      <button class="skip" data-act="rest-skip">${esc(t('skip'))}</button>
+/* ---- editing a logged set, in place, in the same controls ---- */
+function editBlock(e, ei, si, kind, n) {
+  const st = e.sets[si];
+  let rows;
+  if (kind === 'time') rows = steprow(t('time'), ei, si, 's', st.s, 'numeric');
+  else if (kind === 'reps') rows = steprow(t('reps'), ei, si, 'r', st.r, 'numeric') + steprow(`+${t('kg')}`, ei, si, 'w', st.w, 'decimal');
+  else rows = steprow(t('weight'), ei, si, 'w', st.w, 'decimal') + steprow(t('reps'), ei, si, 'r', st.r, 'numeric');
+  return `<div class="live editing">
+    <div class="livehead"><span class="n">${esc(t('edit_set_title', { n }))}</span></div>
+    ${rows}
+    <button class="btn-primary" data-act="save-set">${esc(t('save'))}</button>
+    <div class="editfoot">
+      <button class="linkbtn" data-act="cancel-edit">${esc(t('cancel'))}</button>
+      <button class="linkbtn" data-act="warm" data-e="${ei}" data-s="${si}">${esc(t(st.warm ? 'mark_working' : 'mark_warm'))}</button>
+      <button class="linkbtn bad" data-act="del-set" data-e="${ei}" data-s="${si}">${esc(t('delete_set'))}</button>
     </div>
-    ${nx ? `<div class="upnext"><div class="lbl">${esc(t('up_next'))}</div><div class="name">${esc(nx)}</div></div>` : ''}
   </div>`;
 }
-function upNextName(w, cur) {
-  const e = w.entries[cur];
-  if (e && liveSetIndex(e) >= 0) return label(exById(e.exId));
-  const nx = w.entries.find((x, i) => i !== cur && liveSetIndex(x) >= 0);
-  return nx ? label(exById(nx.exId)) : '';
+
+/* ---- duration exercises: a clock, not a form ---- */
+function timerBlock(e, ei) {
+  const tm = timerFor(ei);
+  const secs = timerElapsed(tm);
+  const running = !!(tm && tm.startedAt);
+  const prev = lastPerformance(e.exId, S.active.id);
+  const ps = prev ? doneSets(prev.entry) : [];
+  const prevStr = ps.length ? fmtClock(num(ps[ps.length - 1].s)) : '';
+  const n = doneSets(e).length + 1;
+  return `<div class="live timer">
+    <div class="livehead"><span class="n">${esc(t('set_n', { n }))}</span></div>
+    <div class="clock" id="clock-${ei}">${esc(fmtClock(secs))}</div>
+    <div class="timerrow">
+      <button class="btn" data-act="timer-toggle" data-v="${ei}">${esc(running ? t('t_pause') : (secs ? t('t_resume') : t('t_start')))}</button>
+      <button class="btn-primary" data-act="log-time" data-v="${ei}"${secs ? '' : ' disabled'}>${esc(t('t_log'))} ${esc(fmtClock(secs))}</button>
+    </div>
+    ${prevStr ? `<div class="timerprev">${esc(t('last_time'))} ${esc(prevStr)}</div>` : ''}
+  </div>`;
+}
+
+/* Clocks are derived from wall-clock timestamps, never accumulated per tick:
+   iOS suspends timers in a backgrounded PWA, so a counter loses time in a
+   pocket. State lives on S.active so a reload mid-set resumes correctly. */
+function timerFor(ei) { return (S.active && S.active.timers && S.active.timers[ei]) || null; }
+function timerElapsed(tm) {
+  if (!tm) return 0;
+  const live = tm.startedAt ? (Date.now() - tm.startedAt) : 0;
+  return Math.max(0, Math.floor(((tm.acc || 0) + live) / 1000));
+}
+function timerToggle(ei) {
+  const w = S.active;
+  if (!w) return;
+  w.timers = w.timers || {};
+  const tm = w.timers[ei] || { startedAt: null, acc: 0 };
+  if (tm.startedAt) { tm.acc = (tm.acc || 0) + (Date.now() - tm.startedAt); tm.startedAt = null; }
+  else tm.startedAt = Date.now();
+  w.timers[ei] = tm;
+  save(); render();
+}
+function timerClear(ei) {
+  if (S.active && S.active.timers) { delete S.active.timers[ei]; save(); }
 }
 
 function undoStrip(pd, ei) {
@@ -589,63 +783,60 @@ function undoStrip(pd, ei) {
     <button class="ibtn" data-act="del-set" data-e="${ei}" data-s="${pd.si}" aria-label="${esc(t('delete_now'))}">×</button></div>`;
 }
 
-/* values the live set starts from: this session's previous working set, else last session */
+/* Pre-fill order: the last set logged for this exercise in THIS workout, then
+   the last set of the previous session, then empty. Filling from set 1 was the
+   reported bug: going heavier on set 2 left set 3 showing the opening weight. */
 function prefillFor(e, si, prev) {
   const out = {};
   const take = (src) => { if (src) ['w', 'r', 's'].forEach((f) => { if (out[f] == null && hasVal(src[f])) out[f] = src[f]; }); };
-  for (let j = si - 1; j >= 0; j--) { if (e.sets[j].done && !e.sets[j].warm) { take(e.sets[j]); break; } }
-  if (prev) {
-    const ps = prev.entry.sets.filter((x) => !x.warm);
-    take(prev.entry.sets[si] && !prev.entry.sets[si].warm ? prev.entry.sets[si] : ps[ps.length - 1]);
-  }
-  for (let j = si - 1; j >= 0; j--) { if (e.sets[j].done) { take(e.sets[j]); break; } }
+  for (let j = e.sets.length - 1; j >= 0; j--) { if (j !== si && e.sets[j].done) { take(e.sets[j]); break; } }
+  if (prev) { const ps = doneSets(prev.entry); take(ps[ps.length - 1]); }
   return out;
 }
 
-function lastStr(prev, si, kind) {
+function lastStr(prev, kind) {
   if (!prev) return '';
-  const ps = prev.entry.sets.filter((x) => !x.warm);
-  const p = prev.entry.sets[si] && !prev.entry.sets[si].warm ? prev.entry.sets[si] : ps[ps.length - 1];
-  if (!p) return '';
-  return setStr(p, kind);
+  const ps = doneSets(prev.entry);
+  const p = ps[ps.length - 1];
+  return p ? setStr(p, kind) : '';
 }
 
 /* one step for every weight, tap or hold: settings.wStep (0.5 or 1), default 1 kg */
 function stepFor(ex, fld) {
   if (fld === 'r') return 1;
-  if (fld === 's') return 5;
+  if (fld === 's') return 15;
   if (num(ex.inc) > 0) return num(ex.inc);
   return num(S.settings.wStep) || 1;
 }
 
-/* label on the left, 60px filled buttons on the right. The unit is in the
-   label, not in the well: v3 printed "kg" three times per set. */
 function steprow(lbl, ei, si, fld, value, mode) {
   const a = `data-e="${ei}" data-s="${si}" data-fld="${fld}"`;
   return `<div class="steprow"><span class="lbl">${esc(lbl)}</span>
     <div class="stepper">
       <button data-act="step" data-dir="dn" ${a} aria-label="−">−</button>
-      <label class="well"><input type="text" inputmode="${mode}" ${a} value="${esc(value)}" placeholder="0" autocomplete="off" enterkeyhint="done"></label>
+      <label class="well"><input type="text" inputmode="${mode}" ${a} value="${esc(value == null ? '' : value)}" placeholder="0" autocomplete="off" enterkeyhint="done"></label>
       <button data-act="step" data-dir="up" ${a} aria-label="+">+</button>
     </div></div>`;
 }
 
-function liveBlock(e, ei, si, kind, ex, prev) {
-  const st = e.sets[si];
-  const pf = prefillFor(e, si, prev);
-  const val = (f) => (hasVal(st[f]) ? st[f] : (pf[f] != null ? pf[f] : ''));
-  let rows;
-  if (kind === 'time') rows = steprow(t('time'), ei, si, 's', val('s'), 'numeric');
-  else if (kind === 'reps') rows = steprow(t('reps'), ei, si, 'r', val('r'), 'numeric') + steprow(`+${t('kg')}`, ei, si, 'w', val('w'), 'decimal');
-  else rows = steprow(t('weight'), ei, si, 'w', val('w'), 'decimal') + steprow(t('reps'), ei, si, 'r', val('r'), 'numeric');
-  const last = lastStr(prev, si, kind);
-  const head = t('set_of', { n: si + 1, m: e.sets.length }) + (st.warm ? ' · ' + t('warmup') : '');
-  return `<div class="setlive" data-e="${ei}" data-s="${si}">
-    <div class="head" data-e="${ei}" data-s="${si}"><span class="n">${esc(head)}</span>
-      ${last ? `<span class="prev">${esc(t('last'))} ${esc(last)}</span>` : ''}</div>
-    ${rows}
-    <button class="btn-primary" data-act="tick" data-e="${ei}" data-s="${si}">${esc(t('log_set', { n: si + 1 }))}</button>
-  </div>`;
+/* ---- finishing: a summary you can still walk back from ---- */
+function viewFinish() {
+  const w = S.pendingFinish;
+  if (!w) { route = 'home'; return viewHome(); }
+  const mins = Math.max(0, Math.round((new Date(w.endedAt) - new Date(w.startedAt)) / 60000));
+  /* only what will actually be saved: logged sets, and the exercises that have one */
+  const exN = w.entries.filter((e) => e.sets.some((x) => x.done)).length;
+  const setN = w.entries.reduce((n, e) => n + e.sets.filter((x) => x.done).length, 0);
+  return `<div class="screenmeta">${esc(fmtDay(w.startedAt, S.settings.lang))}</div>
+    <div class="exname">${esc(w.name || t('workout'))}</div>
+    <div class="kpis mt-5">
+      ${kpi(exN, t('tab_exercises'))}
+      ${kpi(setN, t('sets_short'))}
+      ${kpi(mins, t('min'))}
+      ${kpi(fmtInt(workoutVolume(w)), t('kg'))}
+    </div>
+    <button class="btn-primary mt-5" data-act="finish-commit">${esc(t('done'))}</button>
+    <button class="btn quiet mt-3" data-act="finish-reopen">${esc(t('reopen_workout'))}</button>`;
 }
 
 /* ============ PROGRESS ============ */
@@ -1272,11 +1463,10 @@ function refreshSettings() {
 function openSessionMenu() {
   const w = S.active;
   if (!w) return;
-  const ei = currentEntryIndex(w);
+  const ei = openEntryIndex(w);
   const ex = ei >= 0 ? exById(w.entries[ei].exId) : null;
   const el = sheet(t('session_menu'), `
-    <button class="btn-primary" data-act="finish">${esc(t('finish_workout'))}</button>
-    <button class="btn mt-3" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>
+    <button class="btn" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>
     ${ei >= 0 ? `<button class="btn mt-2" data-act="ex-menu" data-v="${ei}">${esc(t('exercise_options'))}</button>` : ''}
     ${(ex && S.settings.plateCalc && ex.eq === 'barbell') ? `<button class="btn mt-2" data-act="plates" data-v="${ei}">${esc(t('plate_calc'))}</button>` : ''}
     <label class="field mt-4"><span>${esc(t('workout_name'))}</span>
@@ -1289,39 +1479,28 @@ function openSessionMenu() {
   el.dataset.sheet = 'session';
 }
 
-/* --- jump between the session's exercises --- */
-function openJump() {
-  const w = S.active;
-  if (!w) return;
-  const cur = currentEntryIndex(w);
-  const rows = w.entries.map((e, i) => {
-    const done = e.sets.filter((x) => x.done).length;
-    return `<button class="listrow" data-act="focus-entry" data-e="${i}">
-      <span class="grow"><span class="name">${esc(label(exById(e.exId)))}</span>
-      <span class="meta">${esc(t('sets_of', { n: done, m: e.sets.length }))}</span></span>
-      <span class="chev" aria-hidden="true">${i === cur ? '•' : '›'}</span></button>`;
-  }).join('');
-  sheet(t('switch_ex'), `<div class="list">${rows}</div>
-    <button class="btn mt-3" data-act="pick-ex">+ ${esc(t('add_exercise'))}</button>`);
+/* --- muscle and equipment filters for the Exercises list ---
+   Two chip rows above a scrolling list would be three scroll axes on one
+   screen, so both live in a sheet and the list keeps its height. */
+function openFilters() {
+  const f = normalizeFilter(ui.exFilter);
+  const chip = (axis, id, text, on) => `<button class="chip${on ? ' on' : ''}" data-act="exfilter" data-v="${axis}:${id}">${esc(text)}</button>`;
+  const el = sheet(t('filter'), `
+    <h4>${esc(t('muscle'))}</h4>
+    <div class="chips">${chip('m', 'all', t('all'), f.m === 'all')}${MUSCLES.map((m) => chip('m', m.id, label(m), f.m === m.id)).join('')}</div>
+    <h4>${esc(t('equipment'))}</h4>
+    <div class="chips">${chip('eq', 'all', t('all'), f.eq === 'all')}${EQUIPMENT.map((q) => chip('eq', q.id, label(q), f.eq === q.id)).join('')}</div>
+    <div class="sheetfoot">
+      <button class="clear" data-act="exfilter" data-v="all">${esc(t('clear'))}</button>
+      <button class="apply" data-act="close-sheet">${esc(tn('shown', filteredExercises().length))}</button>
+    </div>`);
+  el.dataset.sheet = 'filters';
 }
-
-/* --- muscle group filter for the Exercises list --- */
-function openGroups() {
-  const chip = (id, text) => `<button class="chip ${ui.exFilter === id ? 'on' : ''}" data-act="exfilter" data-v="${id}">${esc(text)}</button>`;
-  sheet(t('group'), `<div class="chips">${chip('all', t('all'))}${MUSCLES.map((m) => chip(m.id, label(m))).join('')}</div>`);
-}
-
-/* --- set menu (long-press a set) --- */
-function openSetMenu(ei, si) {
-  const entry = S.active && S.active.entries[ei];
-  const st = entry && entry.sets[si];
-  if (!st) return;
-  const ex = exById(entry.exId);
-  sheet(`${label(ex)} · ${t('set_n', { n: si + 1 })}`, `
-    <div class="metaline">${esc(setStr(st, ex.kind || 'wr'))}</div>
-    <button class="btn mt-4" data-act="warm" data-e="${ei}" data-s="${si}">${esc(t(st.warm ? 'mark_working' : 'mark_warm'))}</button>
-    ${st.done ? `<button class="btn mt-2" data-act="tick" data-e="${ei}" data-s="${si}">${esc(t('edit_set'))}</button>` : ''}
-    <button class="btn danger mt-2" data-act="del-set" data-e="${ei}" data-s="${si}">${esc(t('delete_set'))}</button>`);
+/* the sheet stays open while you pick, so it repaints itself in place */
+function refreshFilters() {
+  const el = document.querySelector('.sheet[data-sheet="filters"]');
+  if (!el) return;
+  closeSheet(); openFilters();
 }
 
 /* --- exercise menu --- */
@@ -1335,59 +1514,54 @@ function openEntryMenu(ei) {
       <button class="btn" id="em-up">↑ ${esc(t('move_up'))}</button>
       <button class="btn" id="em-down">↓ ${esc(t('move_down'))}</button>
     </div>
-    <button class="btn danger mt-4" id="em-del">${esc(t('delete'))}</button>`);
+    <button class="btn danger mt-4" id="em-del">${esc(t('remove_exercise'))}</button>`);
   el.querySelector('#em-note').addEventListener('input', (ev2) => { e.note = ev2.target.value; save(); });
   const move = (d) => {
     const j = ei + d; if (j < 0 || j >= S.active.entries.length) return;
     const arr = S.active.entries; [arr[ei], arr[j]] = [arr[j], arr[ei]];
-    ui.curEntry = null; save(); closeSheet(); render();
+    ui.openEntry = j; ui.editSet = null; ui.editOrig = null;
+    if (S.active.timers) { const a = S.active.timers[ei], b2 = S.active.timers[j];
+      if (a || b2) { S.active.timers[j] = a; S.active.timers[ei] = b2; if (!a) delete S.active.timers[j]; if (!b2) delete S.active.timers[ei]; } }
+    save(); closeSheet(); render();
   };
   el.querySelector('#em-info').addEventListener('click', () => { closeSheet(); openExercise(e.exId); });
   el.querySelector('#em-up').addEventListener('click', () => move(-1));
   el.querySelector('#em-down').addEventListener('click', () => move(1));
   el.querySelector('#em-del').addEventListener('click', () => {
     if (!confirm(t('confirm_delete'))) return;
-    S.active.entries.splice(ei, 1); ui.curEntry = null; save(); closeSheet(); render();
+    S.active.entries.splice(ei, 1);
+    if (S.active.timers) delete S.active.timers[ei];
+    resetLogUi(); save(); closeSheet(); render();
   });
 }
 
 /* ============ REST TIMER ============ */
-function startRest(sec) {
-  if (!S.settings.restTimer) return;
-  rest.total = sec; rest.endsAt = Date.now() + sec * 1000;
-  if (rest.iv) clearInterval(rest.iv);
-  rest.iv = setInterval(tickRest, 250);
+/* Rest is a bar above the tab bar, never a screen: resting is exactly when
+   you add the next exercise or fix a set you mistyped, and the list behind
+   the bar stays fully scrollable and fully interactive.
+   endsAt is an absolute timestamp on S.active, so a reload, a lock screen or
+   a backgrounded app all resume at the right second. */
+function startRest(sec, ctx) {
+  if (!S.settings.restTimer || !S.active) return;
+  S.active.rest = { endsAt: Date.now() + sec * 1000, name: (ctx && ctx.name) || '', last: (ctx && ctx.last) || '' };
+  save();
   try { if (!audioCtx && window.AudioContext) audioCtx = new AudioContext(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
-  restChrome();
+  renderRestBar();
+  syncTicker();
 }
-/* the countdown is patched in place, never re-rendered: a render every 250 ms
-   would kill the keyboard and the caret */
-function tickRest() {
-  if (!rest.endsAt) return;
-  if (Date.now() >= rest.endsAt) { endRest(true); return; }
-  const txt = fmtClock(Math.max(0, (rest.endsAt - Date.now()) / 1000));
-  const panel = document.querySelector('#app .rest .t');
-  if (panel) panel.textContent = txt;
-  const bar = document.querySelector('#restbar .t');
-  if (bar) bar.textContent = txt;
-  if (!panel && !bar) restChrome();
+function restRemaining() {
+  const r = S.active && S.active.rest;
+  return r && r.endsAt ? Math.max(0, (r.endsAt - Date.now()) / 1000) : 0;
 }
 function endRest(notify) {
-  if (rest.iv) clearInterval(rest.iv);
-  rest.iv = null; rest.endsAt = 0;
-  if (notify && S.settings.vibrate) {
+  const had = !!(S.active && S.active.rest);
+  if (had) { delete S.active.rest; save(); }
+  if (had && notify && S.settings.vibrate) {
     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     beep();
   }
-  restChrome();
-}
-/* on the logger the rest state is the whole screen, so it needs a render;
-   everywhere else it is the thin bar above the tabs */
-function restChrome() {
-  if (route === 'log' && S.active) {
-    render();
-    const m = $('#app'); if (m) m.scrollTop = 0;
-  } else renderRestBar();
+  renderRestBar();
+  syncTicker();
 }
 function beep() {
   try {
@@ -1403,14 +1577,16 @@ function beep() {
 }
 function renderRestBar() {
   const old = document.getElementById('restbar');
-  const show = rest.endsAt && !(route === 'log' && S.active);
-  if (!show) { if (old) { old.remove(); syncNavOverlap(); } return; }
-  if (old) return;
-  const left = Math.max(0, (rest.endsAt - Date.now()) / 1000);
-  const el = document.createElement('div'); el.id = 'restbar'; el.setAttribute('role', 'timer');
-  el.innerHTML = `<span class="lbl">${esc(t('rest'))}</span><span class="t">${fmtClock(left)}</span><span class="spacer"></span>
-    <button data-act="rest-add">${esc(t('add30'))}</button>
-    <button data-act="rest-skip">${esc(t('skip'))}</button>`;
+  const r = S.active && S.active.rest;
+  if (!r || restRemaining() <= 0) { if (old) { old.remove(); syncNavOverlap(); } return; }
+  const html = `<div class="top"><span class="t">${esc(fmtClock(restRemaining()))}</span>
+      <span class="meta"><span class="a">${esc(t('rest'))}${r.name ? ' · ' + esc(r.name) : ''}</span>
+      ${r.last ? `<span class="b">${esc(t('last'))} ${esc(r.last)}</span>` : ''}</span></div>
+    <div class="row"><button class="add" data-act="rest-add">${esc(t('add30'))}</button>
+      <button class="skip" data-act="rest-skip">${esc(t('skip'))}</button></div>`;
+  if (old) { old.innerHTML = html; return; }
+  const el = document.createElement('div');
+  el.id = 'restbar'; el.setAttribute('role', 'timer'); el.innerHTML = html;
   $('#shell').insertBefore(el, $('#nav'));
   syncNavOverlap();
 }
@@ -1457,59 +1633,9 @@ function stopHold() {
   hold = null;
 }
 
-/* ============ SWIPE TO DELETE + LONG-PRESS ============ */
-/* Rows carry touch-action: pan-y, so vertical scrolling stays with the browser.
-   The axis locks on the first 6px: a vertical start abandons the gesture for good. */
-function onPointerDown(ev) {
-  if (ev.button > 0) return;
-  const stepBtn = ev.target.closest('[data-act="step"]');
-  if (stepBtn) { startHold(ev, stepBtn); return; }
-  if (route !== 'log' || !S.active || ev.target.closest('.sheet')) return;
-  const row = ev.target.closest('.setline[data-s], .setlive .head');
-  if (!row) return;
-  gest = { row, isHead: row.classList.contains('head'), pid: ev.pointerId, x0: ev.clientX, y0: ev.clientY, axis: null, dx: 0 };
-  gest.lp = setTimeout(() => onLongPress(row), LONG_MS);
-}
-function onPointerMove(ev) {
-  if (!gest || ev.pointerId !== gest.pid) return;
-  const dx = ev.clientX - gest.x0, dy = ev.clientY - gest.y0;
-  if (gest.axis === null) {
-    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
-    clearTimeout(gest.lp);
-    if (gest.isHead || Math.abs(dx) <= Math.abs(dy)) { gest = null; return; }
-    gest.axis = 'x';
-    gest.row.classList.remove('settle');
-    gest.row.classList.add('dragging');
-    try { gest.row.setPointerCapture(ev.pointerId); } catch (e) {}
-  }
-  gest.dx = Math.min(0, dx);
-  gest.row.style.transform = `translateX(${gest.dx}px)`;
-  gest.row.style.opacity = String(1 - Math.min(0.6, Math.abs(gest.dx) / 200));
-}
-function onPointerEnd(ev) {
-  stopHold();
-  if (!gest || ev.pointerId !== gest.pid) return;
-  clearTimeout(gest.lp);
-  const g = gest; gest = null;
-  if (g.axis !== 'x') return;
-  suppressClickUntil = Date.now() + 350;
-  const row = g.row;
-  row.classList.remove('dragging');
-  if (ev.type === 'pointerup' && Math.abs(g.dx) >= SWIPE_MIN) {
-    softDeleteSet(+row.dataset.e, +row.dataset.s);
-  } else {
-    row.classList.add('settle');
-    row.style.transform = ''; row.style.opacity = '';
-  }
-}
-function onLongPress(row) {
-  if (!gest || gest.row !== row) return;
-  gest = null;
-  suppressClickUntil = Date.now() + 700;
-  try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
-  commitDelete();
-  openSetMenu(+row.dataset.e, +row.dataset.s);
-}
+/* ============ DELETE + UNDO ============ */
+/* There is no swipe and no long-press any more: every logged set is a button
+   that opens the same steppers, with Delete set spelled out inside it. */
 
 /* Soft delete: the set leaves the list at once and an undo strip takes its place.
    Nothing is written to storage until the 6 s timer commits it. */
@@ -1589,14 +1715,6 @@ function onInput(ev) {
 
 function closeSheetIfIn(b) { if (b.closest('.sheet')) closeSheet(); }
 
-function revealLiveSet() {
-  const lb = document.querySelector('#app .setlive');
-  const m = $('#app');
-  if (!lb || !m) return;
-  const r = lb.getBoundingClientRect(), mr = m.getBoundingClientRect();
-  if (r.top < mr.top || r.bottom > mr.bottom) lb.scrollIntoView({ block: r.height > mr.height ? 'start' : 'nearest', behavior: 'smooth' });
-}
-
 function onClick(ev) {
   const b = ev.target.closest('[data-act]');
   if (!b) return;
@@ -1610,41 +1728,54 @@ function onClick(ev) {
     case 'close-sheet': closeSheet(); break;
 
     /* home */
-    case 'start-empty': startWorkout(null); ui.curEntry = null; go('log'); break;
-    case 'start-tpl': closeAllSheets(); startWorkout(v); ui.curEntry = null; go('log'); break;
+    case 'start-empty': startWorkout(null); resetLogUi(); go('log'); break;
+    case 'start-tpl': closeAllSheets(); startWorkout(v); resetLogUi(); go('log'); break;
     case 'all-tpl': openTemplates(); break;
     case 'resume': if (route !== 'log') go('log'); break;
     case 'settings': closeAllSheets(); openSettings(); break;
-    case 'ex-groups': openGroups(); break;
+    case 'ex-groups': openFilters(); break;
 
-    /* workout editing */
+    /* workout */
     case 'more': openSessionMenu(); break;
-    case 'jump': openJump(); break;
+    case 'open-entry': {
+      ui.openEntry = +v; ui.editSet = null; ui.editOrig = null; ui.addW = null;
+      render(); break;
+    }
+    /* a picked exercise lands open, at the bottom, with the list scrolled to it */
     case 'pick-ex': if (b.closest('.sheet')) closeAllSheets(); openPicker((exId) => {
-      S.active.entries.push({ exId, note: '', target: null, sets: [{ w: '', r: '', done: false }] });
-      ui.curEntry = S.active.entries.length - 1;
+      S.active.entries.push({ exId, note: '', target: null, sets: [] });
+      ui.openEntry = S.active.entries.length - 1; ui.editSet = null; ui.editOrig = null; ui.addW = null;
       save(); render();
-      const blk = document.querySelector(`[data-entry="${ui.curEntry}"]`);
-      if (blk) blk.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      requestAnimationFrame(() => { const m = $('#app'); if (m) m.scrollTop = m.scrollHeight; });
     }); break;
     case 'add-set': {
       const e = S.active.entries[+v];
-      const last = e.sets[e.sets.length - 1];
-      e.sets.push(last ? { w: last.w, r: last.r, s: last.s, done: false } : { w: '', r: '', done: false });
-      ui.curEntry = +v;
-      save(); render(); revealLiveSet(); break;
-    }
-    case 'focus-entry': {
-      closeSheetIfIn(b);
-      ui.curEntry = ei;
-      const m = $('#app'); if (m) m.scrollTop = 0;
-      render();
+      if (e && !e.sets.some((x) => !x.done)) { e.sets.push({ w: '', r: '', done: false }); save(); render(); }
       break;
     }
+    case 'add-weight': ui.addW = +v; render(); break;
     case 'step': break;
     case 'undo-set': undoDelete(); break;
+    case 'edit-set': {
+      const st = S.active.entries[ei] && S.active.entries[ei].sets[si];
+      if (!st) break;
+      ui.editSet = { e: ei, s: si };
+      ui.editOrig = { w: st.w, r: st.r, s: st.s, warm: st.warm };
+      render(); break;
+    }
+    case 'save-set': ui.editSet = null; ui.editOrig = null; save(); render(); break;
+    case 'cancel-edit': {
+      const es = ui.editSet;
+      const st = es && S.active.entries[es.e] && S.active.entries[es.e].sets[es.s];
+      if (st && ui.editOrig) {
+        st.w = ui.editOrig.w; st.r = ui.editOrig.r; st.s = ui.editOrig.s;
+        if (ui.editOrig.warm) st.warm = true; else delete st.warm;
+      }
+      ui.editSet = null; ui.editOrig = null; save(); render(); break;
+    }
     case 'del-set':
       closeSheetIfIn(b);
+      ui.editSet = null; ui.editOrig = null;
       if (b.closest('.undo')) { commitDelete(); render(); }
       else softDeleteSet(ei, si);
       break;
@@ -1660,26 +1791,36 @@ function onClick(ev) {
       const entry = S.active.entries[ei];
       const st = entry && entry.sets[si];
       if (!st) break;
-      if (!st.done) {
-        let missing = null;
-        ['w', 'r', 's'].forEach((f) => {
-          const inp = document.querySelector(`#app input[data-e="${ei}"][data-s="${si}"][data-fld="${f}"]`);
-          if (inp) st[f] = inp.value;
-        });
-        const kind = exById(entry.exId).kind || 'wr';
-        const need = kind === 'time' ? 's' : 'r';
-        if (num(st[need]) <= 0) missing = document.querySelector(`#app input[data-e="${ei}"][data-s="${si}"][data-fld="${need}"]`);
-        if (missing) { save(); missing.focus(); break; }
-        st.done = true;
-        /* the last set of an exercise hands the screen to the next one */
-        ui.curEntry = liveSetIndex(entry) < 0 ? null : ei;
-        save(); render(); revealLiveSet();
-        startRest(num(S.settings.restDefault) || 120);
-      } else {
-        st.done = false;
-        ui.curEntry = ei;
-        save(); render(); revealLiveSet();
+      ['w', 'r', 's'].forEach((f) => {
+        const inp = document.querySelector(`#app input[data-e="${ei}"][data-s="${si}"][data-fld="${f}"]`);
+        if (inp) st[f] = inp.value;
+      });
+      const kind = exById(entry.exId).kind || 'wr';
+      const need = kind === 'time' ? 's' : 'r';
+      if (num(st[need]) <= 0) {
+        const miss = document.querySelector(`#app input[data-e="${ei}"][data-s="${si}"][data-fld="${need}"]`);
+        save(); if (miss) miss.focus(); break;
       }
+      st.done = true;
+      ui.addW = null;
+      save(); render();
+      startRest(num(S.settings.restDefault) || 120, restContext(entry, st, kind));
+      break;
+    }
+    /* cardio: a clock, and one button that says what it will log */
+    case 'timer-toggle': timerToggle(+v); break;
+    case 'log-time': {
+      const idx = +v;
+      const entry = S.active.entries[idx];
+      const secs = timerElapsed(timerFor(idx));
+      if (!entry || !secs) break;
+      const si2 = liveSetIndex(entry);
+      if (!entry.sets[si2]) entry.sets.push({ w: '', r: '', done: false });
+      entry.sets[si2].s = String(secs);
+      entry.sets[si2].done = true;
+      timerClear(idx);
+      save(); render();
+      startRest(num(S.settings.restDefault) || 120, restContext(entry, entry.sets[si2], 'time'));
       break;
     }
     case 'ex-menu': closeSheetIfIn(b); openEntryMenu(+v); break;
@@ -1690,20 +1831,36 @@ function onClick(ev) {
       openPlates(last ? num(last.w) : '');
       break;
     }
+    /* finishing is staged: the summary can still be walked back from */
     case 'finish': {
-      if (activeSetCount() === 0) { alert(t('empty_workout')); break; }
-      if (!confirm(t('finish_confirm'))) break;
-      closeAllSheets();
       const w = S.active;
-      if (w.editing) {
-        w.editing = false; w.endedAt = w.endedAt || new Date().toISOString();
-        w.entries = w.entries.filter((e) => e.sets.length);
-        S.workouts.push(w); S.workouts.sort((a, b2) => new Date(b2.startedAt) - new Date(a.startedAt));
-        S.active = null; save();
-      } else finishWorkout();
-      ui.curEntry = null; endRest(false); go('history'); break;
+      if (!w) break;
+      if (activeSetCount() === 0) { alert(t('no_sets_logged')); break; }
+      closeAllSheets();
+      endRest(false);
+      w.endedAt = new Date().toISOString();
+      if (w.editing) { commitWorkout(w); ui.openEntry = 0; go('history'); break; }
+      S.pendingFinish = w; S.active = null;
+      resetLogUi(); save(); go('finish'); break;
     }
-    case 'discard': if (confirm(t('discard_confirm'))) { closeAllSheets(); discardWorkout(); ui.curEntry = null; endRest(false); go('home'); } break;
+    case 'finish-commit': {
+      const w = S.pendingFinish;
+      if (!w) { go('home'); break; }
+      S.pendingFinish = null;
+      commitWorkout(w);
+      go('history'); break;
+    }
+    case 'finish-reopen': {
+      const w = S.pendingFinish;
+      if (!w) { go('home'); break; }
+      delete w.endedAt;
+      S.active = w; S.pendingFinish = null; save(); go('log'); break;
+    }
+    case 'discard': {
+      const n = activeSetCount();
+      if (!confirm(t('discard_n', { n }))) break;
+      closeAllSheets(); endRest(false); discardWorkout(); resetLogUi(); go('home'); break;
+    }
 
     /* history */
     case 'open-workout': openWorkout(v); break;
@@ -1714,14 +1871,14 @@ function onClick(ev) {
       if (S.active && !confirm(t('discard_confirm'))) break;
       const nw = newWorkout(w.name, w.templateId);
       nw.entries = w.entries.map((e) => ({ exId: e.exId, note: e.note, target: e.target || null, sets: e.sets.map((st) => ({ w: st.w, r: st.r, s: st.s, done: false })) }));
-      S.active = nw; ui.curEntry = null; save(); closeSheet(); go('log'); break;
+      S.active = nw; resetLogUi(); save(); closeSheet(); go('log'); break;
     }
     case 'edit-workout': {
       const i = S.workouts.findIndex((x) => x.id === v);
       if (i < 0) break;
       if (S.active && !confirm(t('discard_confirm'))) break;
       const w = S.workouts.splice(i, 1)[0];
-      w.editing = true; S.active = w; ui.curEntry = null; save(); closeSheet(); go('log'); break;
+      w.editing = true; S.active = w; resetLogUi(); save(); closeSheet(); go('log'); break;
     }
     case 'tpl-from-workout': {
       const w = S.workouts.find((x) => x.id === v);
@@ -1731,7 +1888,16 @@ function onClick(ev) {
     }
 
     /* exercises */
-    case 'exfilter': closeSheetIfIn(b); ui.exFilter = v; render(); { const m = $('#app'); if (m) m.scrollTop = 0; } break;
+    case 'exfilter': {
+      const f = normalizeFilter(ui.exFilter);
+      if (v === 'all') ui.exFilter = { m: 'all', eq: 'all' };
+      else { const [axis, id] = v.split(':'); f[axis] = id; ui.exFilter = f; }
+      const inSheet = !!b.closest('.sheet');
+      render();
+      if (inSheet) refreshFilters();
+      const m = $('#app'); if (m) m.scrollTop = 0;
+      break;
+    }
     case 'open-ex': openExercise(v); break;
     case 'new-ex': openNewExercise(); break;
     case 'edit-ex': { const ex = exById(v); closeSheet(); openNewExercise(null, ex); break; }
@@ -1795,7 +1961,9 @@ function onClick(ev) {
     case 'wipe': if (confirm(t('wipe_confirm')) && confirm(t('wipe_confirm'))) { localStorage.removeItem(KEY); location.reload(); } break;
 
     /* rest */
-    case 'rest-add': rest.endsAt += 30000; tickRest(); break;
+    case 'rest-add':
+      if (S.active && S.active.rest) { S.active.rest.endsAt += 30000; save(); renderRestBar(); }
+      break;
     case 'rest-skip': endRest(false); break;
   }
 }
